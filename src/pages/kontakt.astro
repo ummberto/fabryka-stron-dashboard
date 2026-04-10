@@ -1,0 +1,34 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getClientPage, getClientSiteConfig } from '../lib/client-data';
+
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+if (!clientId) {
+  throw new Error('Brak TEST_CLIENT_ID w env');
+}
+
+const siteConfig = await getClientSiteConfig(clientId);
+const contactPage = await getClientPage(clientId, 'contact');
+---
+
+<BaseLayout
+  title={contactPage.meta_title ?? 'Kontakt'}
+  description={contactPage.meta_description ?? 'Kontakt'}
+>
+  <main class="container" style="padding: 56px 20px;">
+    <h1>{contactPage.title ?? 'Kontakt'}</h1>
+    <p>{contactPage.body_markdown}</p>
+
+    <hr style="margin: 30px 0;" />
+
+    <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
+    <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
+    <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
+    <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+
+    <p style="margin-top: 24px;">
+      <a href="/">← Wróć na stronę główną</a>
+    </p>
+  </main>
+</BaseLayout>

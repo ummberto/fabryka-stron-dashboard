@@ -1,0 +1,89 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import {
+  getAllClientLocations,
+  getClientServices,
+  getClientSiteConfig,
+  getLocationBySlug,
+} from '../../lib/client-data';
+
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+if (!clientId) {
+  throw new Error('Brak TEST_CLIENT_ID w env');
+}
+
+export async function getStaticPaths() {
+  const clientId = import.meta.env.TEST_CLIENT_ID;
+
+  if (!clientId) {
+    throw new Error('Brak TEST_CLIENT_ID w env w getStaticPaths');
+  }
+
+  const locations = await getAllClientLocations(clientId);
+
+  return locations.map((location) => ({
+    params: { slug: location.slug },
+  }));
+}
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  throw new Error('Brak slug lokalizacji');
+}
+
+const siteConfig = await getClientSiteConfig(clientId);
+const location = await getLocationBySlug(clientId, slug);
+const services = await getClientServices(clientId);
+---
+
+<BaseLayout
+  title={`${siteConfig.site_name ?? 'Firma'} - ${location.city}`}
+  description={`Usługi w lokalizacji ${location.city}`}
+>
+  <header>
+    <div class="container header-inner">
+      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
+
+      <nav>
+        <a href="/">Home</a>
+        <a href="/o-nas">O nas</a>
+        <a href="/kontakt">Kontakt</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding: 56px 20px;">
+    <p><a href="/">← Wróć na stronę główną</a></p>
+
+    <h1>{siteConfig.site_name} — {location.city}</h1>
+
+    <p>
+      Obsługujemy klientów w lokalizacji: <strong>{location.city}</strong>
+      {location.region ? `, ${location.region}` : ''}.
+    </p>
+
+    {location.is_main && (
+      <p><strong>To jest lokalizacja główna.</strong></p>
+    )}
+
+    <section style="margin-top: 32px;">
+      <h2>Dostępne usługi</h2>
+      <ul>
+        {services.map((service) => (
+          <li>
+            <a href={`/uslugi/${service.slug}`}>{service.name}</a>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section style="margin-top: 32px;">
+      <h2>Kontakt</h2>
+      <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
+      <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
+      <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
+    </section>
+  </main>
+</BaseLayout>

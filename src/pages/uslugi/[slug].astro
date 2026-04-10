@@ -1,0 +1,77 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import {
+  getAllClientServices,
+  getClientSiteConfig,
+  getServiceBySlug,
+} from '../../lib/client-data';
+
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+if (!clientId) {
+  throw new Error('Brak TEST_CLIENT_ID w env');
+}
+
+export async function getStaticPaths() {
+  const clientId = import.meta.env.TEST_CLIENT_ID;
+
+  if (!clientId) {
+    throw new Error('Brak TEST_CLIENT_ID w env w getStaticPaths');
+  }
+
+  const services = await getAllClientServices(clientId);
+
+  return services.map((service) => ({
+    params: { slug: service.slug },
+  }));
+}
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  throw new Error('Brak slug usługi');
+}
+
+const siteConfig = await getClientSiteConfig(clientId);
+const service = await getServiceBySlug(clientId, slug);
+---
+
+<BaseLayout
+  title={`${service.name} | ${siteConfig.site_name ?? 'Usługa'}`}
+  description={service.short_description ?? `${service.name} - oferta`}
+>
+  <header>
+    <div class="container header-inner">
+      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
+
+      <nav>
+        <a href="/">Home</a>
+        <a href="/o-nas">O nas</a>
+        <a href="/kontakt">Kontakt</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding: 56px 20px;">
+    <p><a href="/">← Wróć na stronę główną</a></p>
+
+    <h1>{service.name}</h1>
+    <p>{service.short_description ?? 'Opis usługi pojawi się tutaj.'}</p>
+
+    <section style="margin-top: 32px;">
+      <h2>Dlaczego warto wybrać tę usługę</h2>
+      <p>
+        To jest wersja MVP. Na razie treść bierze się z encji biznesowej
+        services. Później podmienisz to na service_versions, drafty,
+        diffy i workflow publikacji.
+      </p>
+    </section>
+
+    <section style="margin-top: 32px;">
+      <h2>Kontakt</h2>
+      <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
+      <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
+      <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+    </section>
+  </main>
+</BaseLayout>

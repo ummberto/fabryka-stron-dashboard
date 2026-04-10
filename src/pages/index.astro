@@ -1,17 +1,105 @@
 ---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import {
+  getAllClientLocations,
+  getClientPage,
+  getClientServices,
+  getClientSiteConfig,
+} from '../lib/client-data';
 
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+if (!clientId) {
+  throw new Error('Brak TEST_CLIENT_ID w env');
+}
+
+const siteConfig = await getClientSiteConfig(clientId);
+const services = await getClientServices(clientId);
+const locations = await getAllClientLocations(clientId);
+const homePage = await getClientPage(clientId, 'home');
+
+const title = homePage.meta_title ?? siteConfig.site_name ?? 'Fabryka Stron';
+const description =
+  homePage.meta_description ?? 'Pierwsza strona zasilana z Supabase';
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<BaseLayout title={title} description={description}>
+  <header>
+    <div class="container header-inner">
+      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
+
+      <nav>
+        <a href="/">Home</a>
+        <a href="/o-nas">O nas</a>
+        <a href="/kontakt">Kontakt</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>{homePage.title ?? siteConfig.site_name}</h1>
+        <p>{homePage.meta_description}</p>
+
+        {siteConfig.cta_url && (
+          <a class="cta" href={siteConfig.cta_url}>
+            Skontaktuj się
+          </a>
+        )}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Nasze usługi</h2>
+
+        <div class="grid">
+          {services.map((service) => (
+            <article class="card">
+              <h3>{service.name}</h3>
+              <p class="muted">{service.short_description}</p>
+              <a href={`/uslugi/${service.slug}`}>Zobacz więcej</a>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+<section class="section">
+  <div class="container">
+    <h2>Obsługiwane lokalizacje</h2>
+
+    <div class="grid">
+      {locations.map((location) => (
+        <article class="card">
+          <h3>{location.city}</h3>
+          <p class="muted">
+            {location.region ?? 'Lokalizacja aktywna w systemie'}
+          </p>
+          <a href={`/lokalizacje/${location.slug}`}>Zobacz lokalizację</a>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+    <section class="section">
+      <div class="container">
+        <h2>Dane kontaktowe</h2>
+        <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
+        <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
+        <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
+        <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div>{siteConfig.site_name}</div>
+      <div class="muted">
+        Template family: {siteConfig.template_family ?? '-'} / version:{' '}
+        {siteConfig.template_version ?? '-'}
+      </div>
+    </div>
+  </footer>
+</BaseLayout>

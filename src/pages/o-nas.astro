@@ -1,0 +1,26 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getClientPage } from '../lib/client-data';
+
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+if (!clientId) {
+  throw new Error('Brak TEST_CLIENT_ID w env');
+}
+
+const aboutPage = await getClientPage(clientId, 'about');
+---
+
+<BaseLayout
+  title={aboutPage.meta_title ?? 'O nas'}
+  description={aboutPage.meta_description ?? 'O nas'}
+>
+  <main class="container" style="padding: 56px 20px;">
+    <h1>{aboutPage.title ?? 'O nas'}</h1>
+    <p>{aboutPage.body_markdown}</p>
+
+    <p style="margin-top: 24px;">
+      <a href="/">← Wróć na stronę główną</a>
+    </p>
+  </main>
+</BaseLayout>
