@@ -1,17 +1,7 @@
 import { supabaseAdmin } from './supabase';
+import type { SiteConfig } from '../types/database';
 
-export type SiteConfig = {
-  client_id: string;
-  site_name: string | null;
-  domain: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  city: string | null;
-  template_family: string | null;
-  template_version: string | null;
-  cta_url: string | null;
-};
+export type { SiteConfig };
 
 export type ServiceItem = {
   id: string;
@@ -186,6 +176,11 @@ export async function updateSiteConfig(clientId: string, payload: {
   address: string;
   city: string;
   cta_url: string;
+  facebook_url?: string;
+  instagram_url?: string;
+  primary_color?: string;
+  secondary_color?: string;
+  logo_url?: string;
 }) {
   const { data, error } = await supabaseAdmin
     .from('site_config')
@@ -197,6 +192,11 @@ export async function updateSiteConfig(clientId: string, payload: {
       address: payload.address,
       city: payload.city,
       cta_url: payload.cta_url,
+      facebook_url: payload.facebook_url || null,
+      instagram_url: payload.instagram_url || null,
+      primary_color: payload.primary_color || null,
+      secondary_color: payload.secondary_color || null,
+      logo_url: payload.logo_url || null,
     })
     .eq('client_id', clientId)
     .select()
@@ -2167,6 +2167,11 @@ export async function createSiteConfig(payload: {
   address?: string;
   city?: string;
   cta_url?: string;
+  facebook_url?: string;
+  instagram_url?: string;
+  primary_color?: string;
+  secondary_color?: string;
+  logo_url?: string;
   template_family?: string;
   template_version?: string;
 }) {
@@ -2181,6 +2186,11 @@ export async function createSiteConfig(payload: {
       address: payload.address ?? null,
       city: payload.city ?? null,
       cta_url: payload.cta_url ?? null,
+      facebook_url: payload.facebook_url ?? null,
+      instagram_url: payload.instagram_url ?? null,
+      primary_color: payload.primary_color ?? null,
+      secondary_color: payload.secondary_color ?? null,
+      logo_url: payload.logo_url ?? null,
       template_family: payload.template_family ?? 'universal',
       template_version: payload.template_version ?? 'v1',
     })

@@ -1,0 +1,482 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { classifyChangeRequest } from '../../../lib/change-classifier';
+import {
+  createChangeRequest,
+  createSystemLog,
+  getAllClientServices,
+  getChangeRequests,
+  getClientById,
+  getClientLocations,
+  getClientPages,
+  getClientPosts,
+  getClientSiteConfig,
+  getDeploymentsByClientId,
+  getSystemLogs,
+  updateSiteConfig,
+} from '../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'update-site-config') {
+    const payload = {
+      site_name: String(formData.get('site_name') ?? ''),
+      domain: String(formData.get('domain') ?? ''),
+      phone: String(formData.get('phone') ?? ''),
+      email: String(formData.get('email') ?? ''),
+      address: String(formData.get('address') ?? ''),
+      city: String(formData.get('city') ?? ''),
+      cta_url: String(formData.get('cta_url') ?? ''),
+      facebook_url: String(formData.get('facebook_url') ?? ''),
+      instagram_url: String(formData.get('instagram_url') ?? ''),
+      primary_color: String(formData.get('primary_color') ?? ''),
+      secondary_color: String(formData.get('secondary_color') ?? ''),
+      logo_url: String(formData.get('logo_url') ?? ''),
+    };
+
+    await updateSiteConfig(clientId, payload);
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'site_config_updated',
+      message: 'Zaktualizowano dane site_config z panelu operatora',
+      payload_json: payload,
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}?saved=1`);
+  }
+
+  if (action === 'create-change-request') {
+    const requestType = String(formData.get('request_type') ?? '');
+    const requestedText = String(formData.get('requested_text') ?? '');
+
+    const classification = classifyChangeRequest(requestType);
+
+    await createChangeRequest({
+      client_id: clientId,
+      request_type: requestType,
+      change_class: classification.change_class,
+      requested_text: requestedText,
+      requires_ai: classification.requires_ai,
+      requires_preview: classification.requires_preview,
+      publish_mode: classification.publish_mode,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'change_request_created',
+      message: `Dodano change request typu ${requestType}`,
+      payload_json: {
+        request_type: requestType,
+        change_class: classification.change_class,
+        requires_ai: classification.requires_ai,
+        requires_preview: classification.requires_preview,
+        publish_mode: classification.publish_mode,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}?request_created=1`);
+  }
+}
+
+const client = await getClientById(clientId);
+const siteConfig = await getClientSiteConfig(clientId);
+const logs = await getSystemLogs(clientId);
+const changeRequests = await getChangeRequests(clientId);
+const services = await getAllClientServices(clientId);
+const pages = await getClientPages(clientId);
+const locations = await getClientLocations(clientId);
+const posts = await getClientPosts(clientId);
+const deployments = await getDeploymentsByClientId(clientId);
+
+const url = new URL(Astro.request.url);
+const saved = url.searchParams.get('saved');
+const requestCreated = url.searchParams.get('request_created');
+---
+
+<AdminLayout title={`Admin — ${client.company_name}`}>
+  <div class="card">
+    <h1>{client.company_name}</h1>
+    <p class="muted">
+      Branża: {client.industry ?? '-'} · Status: {client.status}
+    </p>
+
+    {saved && <p><strong>Zapisano zmiany site_config.</strong></p>}
+    {requestCreated && <p><strong>Dodano nowe zgłoszenie zmiany.</strong></p>}
+
+    <p style="margin-top:16px;">
+      <a href={`/admin/clients/${clientId}/content`}>Przejdź do Content Studio</a>
+    </p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/posts`}>Przejdź do Posts Studio</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/overview`}>Zobacz Content Overview</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/preview-diff`}>Zobacz Preview Diff Center</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/publish-checklist`}>Zobacz Publish Checklist</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/indexing`}>Zobacz Indexing po publish</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/assets`}>Przejdź do Asset Library</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/asset-qa`}>Przejdź do Asset QA</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/design`}>Przejdź do Design Studio</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/section-variants`}>Przejdź do Section Variants Studio</a>
+</p>
+<p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/system-health`}>Zobacz System Health</a>
+</p>
+    <p style="margin-top:16px;">
+      <a href={`/admin/clients/${clientId}/publish`}>Przejdź do Preview & Publish</a>
+    </p>
+
+    <p style="margin-top:8px;">
+      <a href="/admin/deployments">Zobacz globalną historię deploymentów</a>
+    </p>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <h2>Basic edit screen — site_config</h2>
+
+        <form method="POST">
+          <input type="hidden" name="action" value="update-site-config" />
+
+          <label class="label">
+            Nazwa strony
+            <input class="input" type="text" name="site_name" value={siteConfig.site_name ?? ''} />
+          </label>
+
+          <label class="label">
+            Domena
+            <input class="input" type="text" name="domain" value={siteConfig.domain ?? ''} />
+          </label>
+
+          <label class="label">
+            Telefon
+            <input class="input" type="text" name="phone" value={siteConfig.phone ?? ''} />
+          </label>
+
+          <label class="label">
+            E-mail
+            <input class="input" type="email" name="email" value={siteConfig.email ?? ''} />
+          </label>
+
+          <label class="label">
+            Adres
+            <input class="input" type="text" name="address" value={siteConfig.address ?? ''} />
+          </label>
+
+          <label class="label">
+            Miasto
+            <input class="input" type="text" name="city" value={siteConfig.city ?? ''} />
+          </label>
+
+          <label class="label">
+            CTA URL
+            <input class="input" type="text" name="cta_url" value={siteConfig.cta_url ?? ''} />
+          </label>
+
+          <label class="label">
+            Facebook URL
+            <input class="input" type="url" name="facebook_url" value={siteConfig.facebook_url ?? ''} />
+          </label>
+
+          <label class="label">
+            Instagram URL
+            <input class="input" type="url" name="instagram_url" value={siteConfig.instagram_url ?? ''} />
+          </label>
+
+          <label class="label">
+            Kolor główny
+            <input class="input" type="color" name="primary_color" value={siteConfig.primary_color ?? '#000000'} />
+          </label>
+
+          <label class="label">
+            Kolor dodatkowy
+            <input class="input" type="color" name="secondary_color" value={siteConfig.secondary_color ?? '#000000'} />
+          </label>
+
+          <label class="label">
+            Logo URL
+            <input class="input" type="url" name="logo_url" value={siteConfig.logo_url ?? ''} />
+          </label>
+
+          <button class="btn" type="submit">Zapisz site_config</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Zgłoś zmianę</h2>
+        <p class="muted">
+          Wybierz typ zmiany — klasa zostanie przypisana automatycznie.
+        </p>
+
+        <form method="POST">
+          <input type="hidden" name="action" value="create-change-request" />
+
+          <label class="label">
+            Typ zmiany
+            <select class="select" name="request_type">
+              <optgroup label="Quick edit — automatyczny rebuild">
+                <option value="change_phone">Zmiana telefonu</option>
+                <option value="change_email">Zmiana e-maila</option>
+                <option value="change_hours">Zmiana godzin otwarcia</option>
+                <option value="change_cta_url">Zmiana linku CTA</option>
+                <option value="change_social_links">Zmiana social media</option>
+              </optgroup>
+              <optgroup label="Content edit — draft + AI">
+                <option value="rewrite_service_section">Przepisanie opisu usługi</option>
+                <option value="add_faq">Dodanie FAQ</option>
+                <option value="rewrite_about">Przepisanie sekcji O nas</option>
+                <option value="rewrite_contact">Przepisanie sekcji Kontakt</option>
+                <option value="update_reviews">Aktualizacja opinii</option>
+              </optgroup>
+              <optgroup label="Structural edit — preview + AI">
+                <option value="add_service">Nowa usługa</option>
+                <option value="add_location">Nowa lokalizacja</option>
+                <option value="change_slug">Zmiana sluga</option>
+                <option value="create_page">Nowa strona</option>
+                <option value="remove_service">Usunięcie usługi</option>
+              </optgroup>
+              <optgroup label="Design edit — preview, bez AI">
+                <option value="redesign_homepage">Przeprojektowanie strony głównej</option>
+                <option value="change_visual_profile">Zmiana profilu wizualnego</option>
+                <option value="change_section_variant">Zmiana wariantu sekcji</option>
+                <option value="change_template_family">Zmiana template family</option>
+              </optgroup>
+            </select>
+          </label>
+
+          <label class="label">
+            Opis zmiany
+            <textarea class="textarea" name="requested_text" placeholder="Opisz co dokładnie zmienić..."></textarea>
+          </label>
+
+          <button class="btn btn-secondary" type="submit">
+            Dodaj zgłoszenie
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Ostatnie zgłoszenia zmian</h2>
+
+        {changeRequests.length === 0 ? (
+          <p class="muted">Brak zgłoszeń zmian.</p>
+        ) : (
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Typ</th>
+                <th>Klasa</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changeRequests.map((item) => (
+                <tr>
+                  <td>{item.request_type}</td>
+                  <td>{item.change_class}</td>
+                  <td><span class="pill">{item.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div class="card">
+        <h2>Usługi klienta</h2>
+
+        {services.length === 0 ? (
+          <p class="muted">Brak usług.</p>
+        ) : (
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Nazwa</th>
+                <th>Slug</th>
+                <th>Akcja</th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((service) => (
+                <tr>
+                  <td>{service.name}</td>
+                  <td>{service.slug}</td>
+                  <td>
+                    <a href={`/admin/services/${service.id}`}>Wersje usługi</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div class="card">
+        <h2>Strony stałe</h2>
+
+        {pages.length === 0 ? (
+          <p class="muted">Brak stron.</p>
+        ) : (
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>Tytuł</th>
+                <th>Akcja</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pages.map((page) => (
+                <tr>
+                  <td>{page.slug}</td>
+                  <td>{page.title ?? '-'}</td>
+                  <td>
+                    <a href={`/admin/pages/${page.id}`}>Edytuj wersje</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div class="card">
+  <h2>Lokalizacje</h2>
+
+  {locations.length === 0 ? (
+    <p class="muted">Brak lokalizacji.</p>
+  ) : (
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Miasto</th>
+          <th>Slug</th>
+          <th>Akcja</th>
+        </tr>
+      </thead>
+      <tbody>
+        {locations.map((location) => (
+          <tr>
+            <td>{location.city}</td>
+            <td>{location.slug}</td>
+            <td>
+              <a href={`/admin/locations/${location.id}`}>Edytuj wersje</a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )}
+</div>
+<div class="card">
+  <h2>Wpisy eksperckie</h2>
+
+  {posts.length === 0 ? (
+    <p class="muted">Brak wpisów.</p>
+  ) : (
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Tytuł</th>
+          <th>Slug</th>
+          <th>Status</th>
+          <th>Akcja</th>
+        </tr>
+      </thead>
+      <tbody>
+        {posts.map((post) => (
+          <tr>
+            <td>{post.title}</td>
+            <td>{post.slug}</td>
+            <td><span class="pill">{post.status ?? '-'}</span></td>
+            <td>
+              <a href={`/admin/posts/${post.id}`}>Edytuj wpis</a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )}
+</div>
+
+      <div class="card">
+        <h2>Deployments</h2>
+
+        {deployments.length === 0 ? (
+          <p class="muted">Brak deploymentów.</p>
+        ) : (
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Typ</th>
+                <th>Status</th>
+                <th>Deploy URL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deployments.map((item) => (
+                <tr>
+                  <td>{item.type}</td>
+                  <td><span class="pill">{item.status}</span></td>
+                  <td>{item.deploy_url ?? '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div class="card">
+        <h2>System logs</h2>
+
+        {logs.length === 0 ? (
+          <p class="muted">Brak logów.</p>
+        ) : (
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Typ</th>
+                <th>Komunikat</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr>
+                  <td>{log.log_type}</td>
+                  <td>{log.message}</td>
+                  <td>{new Date(log.created_at).toLocaleString('pl-PL')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  </div>
+</AdminLayout>
