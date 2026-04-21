@@ -7,6 +7,7 @@ import ClientLayout from '../layouts/ClientLayout.astro';
 import {
   getAllClientLocations,
   getAssetsByClientId,
+  getClientById,
   getClientPage,
   getClientServices,
   getClientSiteConfig,
@@ -20,7 +21,8 @@ import { getFallbackImages, getServiceFallback } from '../lib/fallback-images';
 const clientId = import.meta.env.TEST_CLIENT_ID;
 if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
-const [siteConfig, services, locations, homePage, profile, assets, posts] = await Promise.all([
+const [client, siteConfig, services, locations, homePage, profile, assets, posts] = await Promise.all([
+  getClientById(clientId),
   getClientSiteConfig(clientId),
   getClientServices(clientId),
   getAllClientLocations(clientId),
@@ -42,7 +44,7 @@ const heroUrl  = heroAsset  ? getPublicAssetUrl(heroAsset.storage_path)  : null;
 const teamUrl  = teamAsset  ? getPublicAssetUrl(teamAsset.storage_path)  : null;
 
 // Fallback stock photos — dobierane per branża klienta
-const fb = getFallbackImages(profile?.template_family, siteConfig?.industry ?? null);
+const fb = getFallbackImages(profile?.template_family, client?.industry ?? null);
 
 const FALLBACK_HERO    = fb.hero;
 const FALLBACK_TEAM    = fb.team;
@@ -76,10 +78,15 @@ const homeSchemas = buildHomePageSchemas({
 if (faqItems.length > 0) homeSchemas.push(buildFAQSchema({ items: faqItems }));
 const schemaScripts = homeSchemas.map(toSchemaScriptTag);
 
+// Type aliases for pricing, testimonials, stats
+type Stat = { number: string; label: string };
+type Testimonial = { quote: string; author: string; role: string; rating: number };
+type PricingTier = { name: string; tagline: string; price_mo: number; price_yr: number; desc: string; features: string[]; featured?: boolean };
+
 // Pricing tiers — from metadata or fallback
 const meta = (homePage as any)?.metadata ?? {};
 
-const pricingTiers = meta.pricing_tiers ?? [
+const pricingTiers: PricingTier[] = meta.pricing_tiers ?? [
   {
     name: 'Podstawowy',
     tagline: 'Idealny dla małych zleceń',
@@ -107,7 +114,7 @@ const pricingTiers = meta.pricing_tiers ?? [
   },
 ];
 
-const testimonials = meta.testimonials ?? [
+const testimonials: Testimonial[] = meta.testimonials ?? [
   { quote: 'Szybka realizacja, profesjonalna ekipa. Polecam z czystym sumieniem — wszystko zgodnie z umową i terminem.', author: 'Anna Kowalska', role: 'Właścicielka apartamentów', rating: 5 },
   { quote: 'Doskonały kontakt od pierwszego telefonu aż do odbioru prac. Jakość wykonania powyżej oczekiwań.', author: 'Marek Wiśniewski', role: 'Manager biurowca', rating: 5 },
   { quote: 'Ekipa jest naprawdę zaangażowana. Zostawili po sobie idealny porządek i wszystko działa bezbłędnie.', author: 'Katarzyna Nowak', role: 'Właścicielka domu', rating: 5 },
@@ -115,7 +122,7 @@ const testimonials = meta.testimonials ?? [
   { quote: 'Terminowość i rzetelność na najwyższym poziomie. Będę korzystał przy kolejnych inwestycjach.', author: 'Piotr Zając', role: 'Deweloper', rating: 5 },
 ];
 
-const stats = meta.stats ?? [
+const stats: Stat[] = meta.stats ?? [
   { number: '1250+', label: 'Zadowolonych klientów' },
   { number: '15+', label: 'Lat doświadczenia' },
   { number: '3200+', label: 'Zrealizowanych projektów' },
@@ -351,7 +358,7 @@ const stats = meta.stats ?? [
               Oferujemy kompleksowy zakres usług dla klientów indywidualnych i biznesowych na terenie {siteConfig.city ?? 'całej Polski'}.
             </p>
             <div class="vf-services-grid">
-              {services.map((s: { name: string; slug: string; short_description?: string }, i: number) => (
+              {services.map((s, i) => (
                 <a href={`/uslugi/${s.slug}`} class="vf-service-card" aria-label={`${s.name} — dowiedz się więcej`}>
                   <div class="vf-service-icon" aria-hidden="true">
                     <svg width="26" height="26" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
