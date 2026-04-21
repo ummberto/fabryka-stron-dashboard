@@ -1,0 +1,409 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  createClient,
+  createLocation,
+  createPage,
+  createService,
+  createSiteConfig,
+  createSystemLog,
+  toSlug,
+} from '../../../lib/client-data';
+import { upsertDesignProfile, upsertSectionVariant } from '../../../lib/client-data';
+import { TEMPLATE_FAMILIES, getRecommendedSections, type TemplateFamilyKey } from '../../../lib/design-system';
+
+let error: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  try {
+    const fd = await Astro.request.formData();
+
+    // ── 1. Klient ──────────────────────────────────────────────
+    const companyName  = String(fd.get('company_name') ?? '').trim();
+    const industry     = String(fd.get('industry') ?? 'trade');
+
+    if (!companyName) throw new Error('Nazwa firmy jest wymagana.');
+
+    const client = await createClient({ company_name: companyName, industry });
+    const clientId = client.id;
+
+    // ── 2. Site config ────────────────────────────────────────
+    const templateFamily = String(fd.get('template_family') ?? 'universal') as TemplateFamilyKey;
+    await createSiteConfig({
+      client_id:       clientId,
+      site_name:       companyName,
+      domain:          String(fd.get('domain') ?? '').trim() || undefined,
+      phone:           String(fd.get('phone') ?? '').trim() || undefined,
+      email:           String(fd.get('email') ?? '').trim() || undefined,
+      address:         String(fd.get('address') ?? '').trim() || undefined,
+      city:            String(fd.get('city') ?? '').trim() || undefined,
+      template_family: templateFamily,
+      template_version:'v1',
+    });
+
+    // ── 3. Design profile ─────────────────────────────────────
+    const familyDef = TEMPLATE_FAMILIES[templateFamily];
+    const preset    = familyDef.preset;
+    await upsertDesignProfile({
+      client_id:      clientId,
+      template_family:templateFamily,
+      font_pair:      preset.font_pair,
+      cta_style:      preset.cta_style,
+      section_rhythm: preset.section_rhythm,
+      radius_style:   preset.radius_style,
+      motion_level:   preset.motion_level,
+      imagery_style:  preset.imagery_style,
+    });
+
+    // ── 4. Strony stałe ──────────────────────────────────────
+    const mainCity  = String(fd.get('city') ?? '').trim();
+    const metaBase  = `${companyName}${mainCity ? ` — ${mainCity}` : ''}`;
+
+    await createPage({
+      client_id:        clientId,
+      slug:             'home',
+      title:            metaBase,
+      meta_title:       `${metaBase} | Strona główna`,
+      meta_description: `${companyName} — profesjonalne usługi${mainCity ? ` w ${mainCity}` : ''}. Szybka wycena, terminowość, doświadczony zespół.`,
+    });
+    await createPage({
+      client_id:        clientId,
+      slug:             'about',
+      title:            'O nas',
+      meta_title:       `O nas | ${companyName}`,
+      meta_description: `Poznaj zespół ${companyName}. Doświadczenie, certyfikaty i pasja do pracy.`,
+    });
+    await createPage({
+      client_id:        clientId,
+      slug:             'contact',
+      title:            'Kontakt',
+      meta_title:       `Kontakt | ${companyName}`,
+      meta_description: `Skontaktuj się z ${companyName}. Telefon, e-mail, adres.`,
+    });
+
+    // ── 5. Usługi ────────────────────────────────────────────
+    const serviceNames = (fd.getAll('service_name') as string[]).filter(Boolean);
+    const serviceDescs = (fd.getAll('service_desc') as string[]);
+    for (let i = 0; i < serviceNames.length; i++) {
+      const name = serviceNames[i].trim();
+      if (!name) continue;
+      await createService({
+        client_id:         clientId,
+        name,
+        slug:              toSlug(name),
+        short_description: (serviceDescs[i] ?? '').trim() || undefined,
+        sort_order:        i + 1,
+      });
+    }
+
+    // ── 6. Lokalizacje ───────────────────────────────────────
+    const locationNames = (fd.getAll('location_name') as string[]).filter(Boolean);
+    for (let i = 0; i < locationNames.length; i++) {
+      const city = locationNames[i].trim();
+      if (!city) continue;
+      await createLocation({
+        client_id: clientId,
+        city,
+        slug:      toSlug(city),
+        is_main:   i === 0,
+      });
+    }
+
+    // ── 7. Section variants (preset dla route /) ─────────────
+    const recommended = getRecommendedSections(templateFamily);
+    for (const rec of recommended) {
+      await upsertSectionVariant({
+        client_id:   clientId,
+        route:       '/',
+        section_key: rec.section_key,
+        variant_key: rec.recommended_variant,
+      });
+    }
+
+    // ── 8. System log ────────────────────────────────────────
+    await createSystemLog({
+      client_id: clientId,
+      log_type:  'client_onboarded',
+      message:   `Klient ${companyName} założony przez formularz intake`,
+      payload_json: {
+        template_family: templateFamily,
+        services_count:  serviceNames.filter(Boolean).length,
+        locations_count: locationNames.filter(Boolean).length,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}?onboarded=1`);
+
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Nieznany błąd';
+  }
+}
+
+const allFamilies = Object.values(TEMPLATE_FAMILIES);
+---
+
+<AdminLayout title="Nowy klient — Intake">
+  <div class="card">
+    <div class="page-title">Nowy klient</div>
+    <div class="page-desc">
+      Jeden formularz — system założy klienta, site_config, design profile, strony, usługi i lokalizacje.
+    </div>
+  </div>
+
+  {error && (
+    <div class="alert alert-danger">{error}</div>
+  )}
+
+  <form method="POST" id="intake-form">
+
+    <!-- SEKCJA 1: Firma -->
+    <div class="card">
+      <h2>1. Dane firmy</h2>
+
+      <div class="grid-2">
+        <label class="label">
+          Nazwa firmy <span style="color:var(--sb-danger)">*</span>
+          <input class="input" type="text" name="company_name"
+            placeholder="np. Hydraulik Kowalski Warszawa" required />
+        </label>
+
+        <label class="label">
+          Branża
+          <select class="select" name="industry">
+            <option value="trade">Trade — hydraulika, elektryka, remonty</option>
+            <option value="medical">Medical — lekarze, fizjoterapeuci</option>
+            <option value="legal">Legal — prawnicy, notariusze</option>
+            <option value="beauty">Beauty — fryzjerzy, kosmetyczki</option>
+            <option value="other">Inne</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="grid-2">
+        <label class="label">
+          Telefon
+          <input class="input" type="tel" name="phone" placeholder="+48 500 600 700" />
+        </label>
+        <label class="label">
+          E-mail
+          <input class="input" type="email" name="email" placeholder="kontakt@firma.pl" />
+        </label>
+      </div>
+
+      <div class="grid-2">
+        <label class="label">
+          Adres
+          <input class="input" type="text" name="address" placeholder="ul. Przykładowa 1" />
+        </label>
+        <label class="label">
+          Miasto
+          <input class="input" type="text" name="city" placeholder="Warszawa" />
+        </label>
+      </div>
+
+      <label class="label">
+        Domena
+        <input class="input" type="text" name="domain"
+          placeholder="hydraulik-kowalski.pl (bez https://)" />
+      </label>
+    </div>
+
+    <!-- SEKCJA 2: Design -->
+    <div class="card">
+      <h2>2. Wygląd strony</h2>
+      <p class="muted" style="margin-bottom:16px;">
+        Każda family ma inny preset wizualny — kolory, fonty, rhythm, radius.
+        Możesz zmienić szczegóły później w Design Studio.
+      </p>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:8px; margin-bottom:16px;">
+        {allFamilies.map((f) => (
+          <label class="family-card">
+            <input type="radio" name="template_family" value={f.key}
+              checked={f.key === 'trade'} class="family-radio" />
+            <div class="family-card-inner">
+              <div class="family-name">{f.label}</div>
+              <div class="family-desc">{f.example_industries.slice(0,3).join(', ')}</div>
+              <div class="family-tokens">
+                <span class="family-token">{f.preset.cta_style}</span>
+                <span class="family-token">{f.preset.section_rhythm}</span>
+                <span class="family-token">{f.preset.radius_style}</span>
+              </div>
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
+
+    <!-- SEKCJA 3: Usługi -->
+    <div class="card">
+      <h2>3. Usługi</h2>
+      <p class="muted" style="margin-bottom:16px;">Dodaj od 1 do 8 usług. Slug generowany automatycznie z nazwy.</p>
+
+      <div id="services-list">
+        {[0,1,2].map((i) => (
+          <div class="service-row" data-index={i}>
+            <div class="grid-2" style="gap:8px;">
+              <label class="label" style="margin-bottom:8px;">
+                Nazwa usługi
+                <input class="input" type="text" name="service_name"
+                  placeholder={i === 0 ? 'np. Naprawa instalacji wodnej' : i === 1 ? 'np. Udrażnianie rur' : 'np. Montaż baterii'} />
+              </label>
+              <label class="label" style="margin-bottom:8px;">
+                Krótki opis (opcjonalnie)
+                <input class="input" type="text" name="service_desc"
+                  placeholder="1–2 zdania o usłudze" />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button type="button" class="btn btn-secondary" id="add-service" style="margin-top:8px;">
+        + Dodaj usługę
+      </button>
+    </div>
+
+    <!-- SEKCJA 4: Lokalizacje -->
+    <div class="card">
+      <h2>4. Lokalizacje</h2>
+      <p class="muted" style="margin-bottom:16px;">Miasta i obszary działania. Pierwsza lokalizacja jest główna.</p>
+
+      <div id="locations-list">
+        {[0,1].map((i) => (
+          <div class="location-row" style="margin-bottom:8px;">
+            <label class="label" style="margin-bottom:0;">
+              {i === 0 ? 'Główna lokalizacja' : `Lokalizacja ${i + 1}`}
+              <input class="input" type="text" name="location_name"
+                placeholder={i === 0 ? 'np. Warszawa' : 'np. Praga Południe'} />
+            </label>
+          </div>
+        ))}
+      </div>
+
+      <button type="button" class="btn btn-secondary" id="add-location" style="margin-top:8px;">
+        + Dodaj lokalizację
+      </button>
+    </div>
+
+    <!-- SUBMIT -->
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+      <div>
+        <div style="font-size:13px; color:var(--sb-text-2); font-weight:500;">Co zostanie utworzone:</div>
+        <div class="muted" style="margin-top:4px;">
+          klient → site_config → design profile (preset) → strony (home, o nas, kontakt) → usługi → lokalizacje → section variants
+        </div>
+      </div>
+      <button type="submit" class="btn" style="flex-shrink:0; height:36px; padding:0 20px; font-size:13px;">
+        Utwórz klienta →
+      </button>
+    </div>
+
+  </form>
+</AdminLayout>
+
+<style is:global>
+  .family-card {
+    position: relative;
+    cursor: pointer;
+  }
+  .family-radio {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .family-card-inner {
+    padding: 14px;
+    border: 1px solid var(--sb-border-2);
+    border-radius: 6px;
+    background: var(--sb-overlay);
+    transition: border-color 100ms, background 100ms;
+  }
+  .family-card:hover .family-card-inner {
+    border-color: var(--sb-border-2);
+    background: var(--sb-raised);
+  }
+  .family-radio:checked + .family-card-inner {
+    border-color: var(--sb-green);
+    background: var(--sb-green-dim);
+  }
+  .family-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sb-text-1);
+    margin-bottom: 4px;
+  }
+  .family-desc {
+    font-size: 11px;
+    color: var(--sb-text-3);
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .family-tokens {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .family-token {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--sb-raised);
+    border: 1px solid var(--sb-border-2);
+    color: var(--sb-text-3);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .family-radio:checked ~ .family-card-inner .family-token {
+    background: rgba(61,181,118,.15);
+    border-color: rgba(61,181,118,.25);
+    color: var(--sb-green-text);
+  }
+</style>
+
+<script>
+  // Dynamiczne dodawanie usług
+  const servicesList = document.getElementById('services-list');
+  let serviceCount = 3;
+
+  document.getElementById('add-service')?.addEventListener('click', () => {
+    if (serviceCount >= 8) return;
+    const row = document.createElement('div');
+    row.className = 'service-row';
+    row.innerHTML = `
+      <div class="grid-2" style="gap:8px;">
+        <label class="label" style="margin-bottom:8px;">
+          Nazwa usługi
+          <input class="input" type="text" name="service_name" placeholder="Nazwa usługi" />
+        </label>
+        <label class="label" style="margin-bottom:8px;">
+          Krótki opis (opcjonalnie)
+          <input class="input" type="text" name="service_desc" placeholder="1–2 zdania o usłudze" />
+        </label>
+      </div>`;
+    servicesList?.appendChild(row);
+    serviceCount++;
+    if (serviceCount >= 8) {
+      (document.getElementById('add-service') as HTMLButtonElement).disabled = true;
+    }
+  });
+
+  // Dynamiczne dodawanie lokalizacji
+  const locationsList = document.getElementById('locations-list');
+  let locationCount = 2;
+
+  document.getElementById('add-location')?.addEventListener('click', () => {
+    if (locationCount >= 10) return;
+    const row = document.createElement('div');
+    row.style.marginBottom = '8px';
+    row.innerHTML = `
+      <label class="label" style="margin-bottom:0;">
+        Lokalizacja ${locationCount + 1}
+        <input class="input" type="text" name="location_name" placeholder="np. Nowa Huta" />
+      </label>`;
+    locationsList?.appendChild(row);
+    locationCount++;
+  });
+</script>

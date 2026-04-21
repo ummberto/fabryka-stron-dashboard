@@ -1,0 +1,86 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getJobs } from '../../lib/client-data';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'execute-job') {
+    const jobId = String(formData.get('job_id') ?? '');
+
+    const response = await fetch(new URL('/api/execute-job', Astro.request.url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+
+    if (!response.ok) {
+      return Astro.redirect('/admin/jobs?exec_failed=1');
+    }
+
+    return Astro.redirect('/admin/jobs?executed=1');
+  }
+}
+
+const jobs = await getJobs();
+const url = new URL(Astro.request.url);
+const executed = url.searchParams.get('executed');
+const execFailed = url.searchParams.get('exec_failed');
+---
+
+<AdminLayout title="Admin — Jobs">
+  <div class="card">
+    <h1>Job Engine</h1>
+    <p class="muted">
+      Tutaj widzisz joby operacyjne. Na razie odpalane ręcznie, później wejdzie worker i kolejka.
+    </p>
+
+    {executed && <p><strong>Job został wykonany — snapshot i deploy uruchomione.</strong></p>}
+    {execFailed && <p><strong>Wykonanie joba nie udało się — sprawdź logi i envy Vercela.</strong></p>}
+  </div>
+
+  <div class="card">
+    {jobs.length === 0 ? (
+      <p class="muted">Brak jobów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Klient</th>
+            <th>Job type</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((job) => (
+            <tr>
+              <td>{job.clients?.company_name ?? job.client_id}</td>
+              <td>{job.job_type}</td>
+              <td><span class="pill">{job.status}</span></td>
+              <td>{job.progress ?? 0}%</td>
+              <td>
+                <form method="POST">
+                  <input type="hidden" name="action" value="execute-job" />
+                  <input type="hidden" name="job_id" value={job.id} />
+                  <button
+                    class="btn"
+                    type="submit"
+                    disabled={job.status === 'completed' || job.status === 'running'}
+                  >
+                    {job.job_type === 'instant_rebuild' ? 'Wykonaj rebuild' : 'Wykonaj job'}
+                  </button>
+                </form>
+                <div style="margin-top:8px;">
+                  <a href={`/admin/jobs/${job.id}`}>Zobacz szczegóły</a>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

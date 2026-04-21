@@ -1,0 +1,149 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getClientById,
+  getContentStatusSummaryForClient,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+const summary = await getContentStatusSummaryForClient(clientId);
+---
+
+<AdminLayout title={`Content Overview — ${client.company_name}`}>
+  <div class="card">
+    <h1>Content Overview</h1>
+    <p class="muted">
+      Przegląd tego, co jest live, co ma draft i co czeka na publish.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Usługi</h2>
+
+    {summary.services.length === 0 ? (
+      <p class="muted">Brak usług.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nazwa</th>
+            <th>Live</th>
+            <th>Draft</th>
+            <th>Approved</th>
+            <th>Published version</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.services.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{item.live_value ? 'tak' : 'nie'}</td>
+              <td>{item.latest_draft ? `v${item.latest_draft.version_no}` : '-'}</td>
+              <td>{item.latest_approved ? `v${item.latest_approved.version_no}` : '-'}</td>
+              <td>{item.latest_published ? `v${item.latest_published.version_no}` : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Strony</h2>
+
+    {summary.pages.length === 0 ? (
+      <p class="muted">Brak stron.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nazwa</th>
+            <th>Live</th>
+            <th>Draft</th>
+            <th>Approved</th>
+            <th>Published version</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.pages.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{item.live_value ? 'tak' : 'nie'}</td>
+              <td>{item.latest_draft ? `v${item.latest_draft.version_no}` : '-'}</td>
+              <td>{item.latest_approved ? `v${item.latest_approved.version_no}` : '-'}</td>
+              <td>{item.latest_published ? `v${item.latest_published.version_no}` : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Lokalizacje</h2>
+
+    {summary.locations.length === 0 ? (
+      <p class="muted">Brak lokalizacji.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Miasto</th>
+            <th>Live</th>
+            <th>Draft</th>
+            <th>Approved</th>
+            <th>Published version</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.locations.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{item.live_value ? 'tak' : 'nie'}</td>
+              <td>{item.latest_draft ? `v${item.latest_draft.version_no}` : '-'}</td>
+              <td>{item.latest_approved ? `v${item.latest_approved.version_no}` : '-'}</td>
+              <td>{item.latest_published ? `v${item.latest_published.version_no}` : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Wpisy</h2>
+
+    {summary.posts.length === 0 ? (
+      <p class="muted">Brak wpisów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tytuł</th>
+            <th>Live</th>
+            <th>Draft</th>
+            <th>Approved</th>
+            <th>Published version</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.posts.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{item.live_value ? 'tak' : 'nie'}</td>
+              <td>{item.latest_draft ? `v${item.latest_draft.version_no}` : '-'}</td>
+              <td>{item.latest_approved ? `v${item.latest_approved.version_no}` : '-'}</td>
+              <td>{item.latest_published ? `v${item.latest_published.version_no}` : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

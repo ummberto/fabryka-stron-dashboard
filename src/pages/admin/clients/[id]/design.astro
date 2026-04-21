@@ -1,0 +1,277 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createSystemLog,
+  getClientById,
+  getDesignProfileByClientId,
+  getSectionVariantsByClientId,
+  upsertDesignProfile,
+} from '../../../../lib/client-data';
+import {
+  TEMPLATE_FAMILIES,
+  getDesignPreset,
+  type TemplateFamilyKey,
+} from '../../../../lib/design-system';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'save-design-profile' || action === 'apply-preset') {
+    let templateFamily = String(formData.get('template_family') ?? 'universal') as TemplateFamilyKey;
+    let fontPair = String(formData.get('font_pair') ?? '');
+    let ctaStyle = String(formData.get('cta_style') ?? '');
+    let sectionRhythm = String(formData.get('section_rhythm') ?? '');
+    let radiusStyle = String(formData.get('radius_style') ?? '');
+    let motionLevel = String(formData.get('motion_level') ?? '');
+    let imageryStyle = String(formData.get('imagery_style') ?? '');
+
+    if (action === 'apply-preset') {
+      const preset = getDesignPreset(templateFamily);
+      fontPair = preset.font_pair;
+      ctaStyle = preset.cta_style;
+      sectionRhythm = preset.section_rhythm;
+      radiusStyle = preset.radius_style;
+      motionLevel = preset.motion_level;
+      imageryStyle = preset.imagery_style;
+    }
+
+    const profile = await upsertDesignProfile({
+      client_id: clientId,
+      template_family: templateFamily,
+      font_pair: fontPair || null,
+      cta_style: ctaStyle || null,
+      section_rhythm: sectionRhythm || null,
+      radius_style: radiusStyle || null,
+      motion_level: motionLevel || null,
+      imagery_style: imageryStyle || null,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: action === 'apply-preset' ? 'design_preset_applied' : 'design_profile_updated',
+      message: action === 'apply-preset'
+        ? `Zastosowano preset dla family: ${templateFamily}`
+        : 'Ręcznie zapisano design profile',
+      payload_json: {
+        design_profile_id: profile.id,
+        template_family: profile.template_family,
+        action,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/design?saved=1&action=${action}`);
+  }
+}
+
+const client = await getClientById(clientId);
+const profile = await getDesignProfileByClientId(clientId);
+const sectionVariants = await getSectionVariantsByClientId(clientId);
+
+const url = new URL(Astro.request.url);
+const saved = url.searchParams.get('saved');
+const savedAction = url.searchParams.get('action');
+
+const allFamilies = Object.values(TEMPLATE_FAMILIES);
+const currentFamily = (profile?.template_family ?? 'universal') as TemplateFamilyKey;
+const currentFamilyDef = TEMPLATE_FAMILIES[currentFamily];
+---
+
+<AdminLayout title={`Design Studio — ${client.company_name}`}>
+  <div class="card">
+    <h1>Design Studio</h1>
+    <p class="muted">
+      Kontrolowana unikalność wizualna klienta przez design profile i warianty sekcji.
+    </p>
+    {saved && savedAction === 'apply-preset' && <p><strong>Zastosowano preset dla family: {currentFamily}.</strong></p>}
+    {saved && savedAction !== 'apply-preset' && <p><strong>Zapisano design profile.</strong></p>}
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Ustawienia wizualne</h2>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="save-design-profile" />
+
+        <label class="label">
+          Template family
+          <select class="select" name="template_family" id="family-select">
+            {allFamilies.map((f) => (
+              <option value={f.key} selected={profile?.template_family === f.key}>
+                {f.label} — {f.description.slice(0, 50)}...
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label class="label">
+          Font pair
+          <input class="input" type="text" name="font_pair" value={profile?.font_pair ?? ''} placeholder="np. Inter + Manrope" />
+        </label>
+
+        <label class="label">
+          CTA style
+          <select class="select" name="cta_style">
+            <option value="" selected={!profile?.cta_style}>-- wybierz --</option>
+            <option value="soft" selected={profile?.cta_style === 'soft'}>soft — delikatne zachęcenie</option>
+            <option value="urgent" selected={profile?.cta_style === 'urgent'}>urgent — pilność, 24/7, awaria</option>
+            <option value="premium" selected={profile?.cta_style === 'premium'}>premium — elegancja i wartość</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Section rhythm
+          <select class="select" name="section_rhythm">
+            <option value="" selected={!profile?.section_rhythm}>-- wybierz --</option>
+            <option value="airy" selected={profile?.section_rhythm === 'airy'}>airy — dużo powietrza</option>
+            <option value="compact" selected={profile?.section_rhythm === 'compact'}>compact — gęste, treściwe</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Radius style
+          <select class="select" name="radius_style">
+            <option value="" selected={!profile?.radius_style}>-- wybierz --</option>
+            <option value="soft" selected={profile?.radius_style === 'soft'}>soft — zaokrąglone rogi</option>
+            <option value="squared" selected={profile?.radius_style === 'squared'}>squared — ostre rogi</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Motion level
+          <select class="select" name="motion_level">
+            <option value="" selected={!profile?.motion_level}>-- wybierz --</option>
+            <option value="none" selected={profile?.motion_level === 'none'}>none — brak animacji</option>
+            <option value="low" selected={profile?.motion_level === 'low'}>low — delikatne przejścia</option>
+            <option value="medium" selected={profile?.motion_level === 'medium'}>medium — animacje sekcji</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Imagery style
+          <select class="select" name="imagery_style">
+            <option value="" selected={!profile?.imagery_style}>-- wybierz --</option>
+            <option value="clinical" selected={profile?.imagery_style === 'clinical'}>clinical — czyste, minimalistyczne</option>
+            <option value="practical" selected={profile?.imagery_style === 'practical'}>practical — realne, robocze</option>
+            <option value="elegant" selected={profile?.imagery_style === 'elegant'}>elegant — estetyczne, stylowe</option>
+          </select>
+        </label>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:16px;">
+          <button class="btn" type="submit">Zapisz ręcznie</button>
+        </div>
+      </form>
+
+      <form method="POST" style="margin-top:12px;">
+        <input type="hidden" name="action" value="apply-preset" />
+        <label class="label">
+          Zastosuj preset dla family
+          <select class="select" name="template_family">
+            {allFamilies.map((f) => (
+              <option value={f.key} selected={f.key === currentFamily}>{f.label}</option>
+            ))}
+          </select>
+        </label>
+        <button class="btn btn-secondary" type="submit">Zastosuj preset</button>
+        <p class="muted" style="margin-top:6px; font-size:0.85em;">
+          Nadpisuje wszystkie pola rekomendowanymi wartościami dla wybranej branży.
+        </p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Aktualny profil</h2>
+      <p><strong>Template family:</strong> {profile?.template_family ?? '-'}</p>
+      <p><strong>Font pair:</strong> {profile?.font_pair ?? '-'}</p>
+      <p><strong>CTA style:</strong> {profile?.cta_style ?? '-'}</p>
+      <p><strong>Section rhythm:</strong> {profile?.section_rhythm ?? '-'}</p>
+      <p><strong>Radius style:</strong> {profile?.radius_style ?? '-'}</p>
+      <p><strong>Motion level:</strong> {profile?.motion_level ?? '-'}</p>
+      <p><strong>Imagery style:</strong> {profile?.imagery_style ?? '-'}</p>
+
+      <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
+        <a href={`/admin/clients/${clientId}/section-variants`}>Przejdź do Section Variants Studio →</a>
+        <a href={`/admin/clients/${clientId}/design-checklist`}>Sprawdź Design Checklist →</a>
+        <a href="/admin/design-catalog">Zobacz katalog template families →</a>
+      </div>
+    </div>
+  </div>
+
+  {currentFamilyDef && (
+    <div class="card">
+      <h2>Rekomendacje dla family: {currentFamilyDef.label}</h2>
+      <p class="muted">{currentFamilyDef.description}</p>
+      <p style="margin-top:8px;"><strong>Przykładowe branże:</strong> {currentFamilyDef.example_industries.join(', ')}</p>
+
+      <div class="grid-2" style="margin-top:16px;">
+        <div>
+          <h3 style="font-size:0.95em; margin-bottom:8px;">Zalecane sekcje</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Sekcja</th>
+                <th>Wariant</th>
+                <th>Uwaga</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentFamilyDef.sections.map((s) => (
+                <tr>
+                  <td>{s.section_key}</td>
+                  <td><span class="pill">{s.recommended_variant}</span></td>
+                  <td style="font-size:0.85em; color:#666;">{s.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3 style="font-size:0.95em; margin-bottom:8px;">Zasady</h3>
+          <p style="font-size:0.9em; font-weight:600; color:#2d6a2d;">Rób:</p>
+          <ul style="font-size:0.85em; margin:4px 0 12px 16px;">
+            {currentFamilyDef.do.map((item) => <li>{item}</li>)}
+          </ul>
+          <p style="font-size:0.9em; font-weight:600; color:#a33;">Nie rób:</p>
+          <ul style="font-size:0.85em; margin:4px 0 0 16px;">
+            {currentFamilyDef.dont.map((item) => <li>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div class="card">
+    <h2>Zapisane warianty sekcji</h2>
+
+    {sectionVariants.length === 0 ? (
+      <p class="muted">Brak zapisanych wariantów sekcji. <a href={`/admin/clients/${clientId}/section-variants`}>Dodaj warianty →</a></p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Route</th>
+            <th>Section key</th>
+            <th>Variant key</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sectionVariants.map((item) => (
+            <tr>
+              <td>{item.route}</td>
+              <td>{item.section_key}</td>
+              <td><span class="pill">{item.variant_key}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

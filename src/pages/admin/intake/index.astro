@@ -1,0 +1,84 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { storeGetAll } from '../../../lib/intake-store';
+
+const projects = storeGetAll();
+
+const statusLabel: Record<string, string> = {
+  raw: 'Oczekuje',
+  enriching: 'Generowanie...',
+  ready: 'Gotowy',
+  error: 'Błąd',
+};
+
+const statusPill: Record<string, string> = {
+  raw: 'pill-yellow',
+  enriching: 'pill-yellow',
+  ready: 'pill-green',
+  error: 'pill-red',
+};
+---
+
+<AdminLayout title="Intake → Metaprompt">
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h1>Intake → Metaprompt</h1>
+        <p class="muted">
+          Wypełnij brief firmy. System wzbogaci dane AI i wygeneruje gotowy metaprompt do Claude Code / Codex.
+        </p>
+      </div>
+      <a class="btn" href="/admin/intake/new">+ Nowy projekt</a>
+    </div>
+  </div>
+
+  <div class="card">
+    {projects.length === 0 ? (
+      <div style="text-align:center; padding:32px 0;">
+        <p class="muted">Brak projektów. Zacznij od nowego briefu.</p>
+        <a class="btn" href="/admin/intake/new" style="margin-top:16px; display:inline-block;">
+          + Utwórz pierwszy projekt
+        </a>
+      </div>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Firma</th>
+            <th>Branża</th>
+            <th>Lokalizacja</th>
+            <th>Typ strony</th>
+            <th>Stack</th>
+            <th>Status</th>
+            <th>Data</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {projects.map((p) => (
+            <tr>
+              <td><strong>{p.company_name}</strong></td>
+              <td>{p.industry ?? '-'}</td>
+              <td>{p.main_location ?? '-'}</td>
+              <td style="font-size:0.85em;">{p.site_type_preference ?? 'auto'}</td>
+              <td style="font-size:0.85em;">{p.target_stack ?? '-'}</td>
+              <td>
+                <span class={`pill ${statusPill[p.status] ?? ''}`}>
+                  {statusLabel[p.status] ?? p.status}
+                </span>
+              </td>
+              <td style="font-size:0.85em; color:var(--sb-text-3);">
+                {new Date(p.created_at).toLocaleDateString('pl-PL')}
+              </td>
+              <td>
+                <a href={`/admin/intake/${p.id}`}>
+                  {p.status === 'ready' ? 'Zobacz metaprompt →' : 'Otwórz →'}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

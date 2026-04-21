@@ -1,0 +1,71 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  getDeploymentsByClientId,
+  getClients,
+} from '../../../lib/client-data';
+
+const clients = await getClients();
+---
+
+<AdminLayout title="Admin — Trigger deploy">
+  <div class="card">
+    <h1>Trigger deploy</h1>
+    <p class="muted">
+      Ręczne wywołanie endpointu deploy bridge. Na razie test operacyjny, później podłączysz Vercela.
+    </p>
+  </div>
+
+  <div class="card">
+    <form id="deploy-form">
+      <label class="label">
+        Client ID
+        <input class="input" type="text" name="clientId" />
+      </label>
+
+      <label class="label">
+        Deployment ID
+        <input class="input" type="text" name="deploymentId" />
+      </label>
+
+      <label class="label">
+        Mode
+        <select class="select" name="mode">
+          <option value="preview">preview</option>
+          <option value="publish">publish</option>
+        </select>
+      </label>
+
+      <button class="btn" type="submit">Wyślij trigger</button>
+    </form>
+
+    <pre id="result" style="margin-top:20px; white-space:pre-wrap;"></pre>
+  </div>
+
+  <script>
+    const form = document.getElementById('deploy-form');
+    const result = document.getElementById('result');
+
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(form);
+      const payload = {
+        clientId: formData.get('clientId'),
+        deploymentId: formData.get('deploymentId'),
+        mode: formData.get('mode'),
+      };
+
+      const response = await fetch('/api/deploy-trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await response.json();
+      result.textContent = JSON.stringify(json, null, 2);
+    });
+  </script>
+</AdminLayout>

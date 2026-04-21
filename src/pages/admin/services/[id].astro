@@ -1,0 +1,295 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  createServiceDraftVersion,
+  createSystemLog,
+  getClientSiteConfig,
+  getClientById,
+  getAllClientServices,
+  getServiceVersions,
+  publishServiceVersionToBase,
+  saveContentDiff,
+  updateServiceVersionStatus,
+} from '../../../lib/client-data';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+const serviceId = Astro.params.id;
+if (!serviceId) throw new Error('Brak serviceId');
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'create-draft-version') {
+    const fullDescription = String(formData.get('full_description') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+    const serviceName = String(formData.get('service_name') ?? '');
+    const oldDescription = String(formData.get('old_description') ?? '');
+
+    const version = await createServiceDraftVersion({
+      service_id: serviceId,
+      full_description: fullDescription,
+      metadata: { service_name: serviceName },
+      source: 'operator_panel',
+    });
+
+    await saveContentDiff({
+      request_id: null,
+      before_json: { short_description: oldDescription },
+      after_json: { full_description: fullDescription },
+      diff_summary: `Ręczny draft dla usługi ${serviceName}`,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'service_draft_created',
+      message: `Draft v${version.version_no} dla usługi ${serviceName}`,
+      payload_json: { service_id: serviceId, version_id: version.id },
+    });
+
+    return Astro.redirect(`/admin/services/${serviceId}?draft_created=1`);
+  }
+
+  if (action === 'approve-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+    const version = await updateServiceVersionStatus(versionId, 'approved');
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'service_version_approved',
+      message: `Zatwierdzono wersję v${version.version_no}`,
+      payload_json: { version_id: versionId },
+    });
+    return Astro.redirect(`/admin/services/${serviceId}?approved=1`);
+  }
+
+  if (action === 'publish-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+
+    const versions = await getServiceVersions(serviceId);
+    const selected = versions.find((v) => v.id === versionId);
+    if (!selected) throw new Error('Nie znaleziono wybranej wersji');
+
+    await publishServiceVersionToBase(serviceId, selected.full_description ?? '');
+    const version = await updateServiceVersionStatus(versionId, 'published');
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'service_version_published',
+      message: `Opublikowano wersję v${version.version_no}`,
+      payload_json: { version_id: versionId },
+    });
+
+    return Astro.redirect(`/admin/services/${serviceId}?published=1`);
+  }
+}
+
+const { data: service, error } = await supabaseAdmin
+  .from('services').select('*').eq('id', serviceId).single();
+if (error || !service) throw new Error('Nie znaleziono usługi');
+
+const versions = await getServiceVersions(serviceId);
+const latestVersion = versions[0] ?? null;
+
+const url = new URL(Astro.request.url);
+const draftCreated  = url.searchParams.get('draft_created');
+const approved      = url.searchParams.get('approved');
+const published     = url.searchParams.get('published');
+const aiGenerated   = url.searchParams.get('ai_generated');
+---
+
+<AdminLayout title={`Usługa — ${service.name}`}>
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+      <div>
+        <div class="page-title">{service.name}</div>
+        <div class="page-desc">slug: {service.slug} · client_id: {service.client_id.slice(0,8)}...</div>
+      </div>
+      <!-- AI Generate button -->
+      <button
+        id="btn-ai-generate"
+        class="btn"
+        data-client-id={service.client_id}
+        data-service-id={service.id}
+        data-service-name={service.name}
+        data-service-slug={service.slug}
+      >
+        ✦ Generuj z AI
+      </button>
+    </div>
+
+    {aiGenerated && <div class="alert alert-success" style="margin-top:12px;">AI wygenerował draft. Sprawdź wersje poniżej i zatwierdź.</div>}
+    {draftCreated && <div class="alert alert-success" style="margin-top:12px;">Utworzono draft wersji.</div>}
+    {approved     && <div class="alert alert-success" style="margin-top:12px;">Wersja zatwierdzona.</div>}
+    {published    && <div class="alert alert-success" style="margin-top:12px;">Wersja opublikowana.</div>}
+  </div>
+
+  <div id="ai-status" style="display:none;" class="card">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div id="ai-spinner" style="width:16px;height:16px;border:2px solid var(--sb-border-2);border-top-color:var(--sb-green);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      <span style="font-size:13px; color:var(--sb-text-2);">AI generuje treść usługi <strong>{service.name}</strong>...</span>
+    </div>
+    <p class="muted" style="margin-top:8px; font-size:12px;">Model: claude-sonnet-4-5 · To zajmuje ok. 10–20 sekund</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Ręczny draft</h2>
+      <form method="POST">
+        <input type="hidden" name="action" value="create-draft-version" />
+        <input type="hidden" name="client_id" value={service.client_id} />
+        <input type="hidden" name="service_name" value={service.name} />
+        <input type="hidden" name="old_description" value={service.short_description ?? ''} />
+
+        <label class="label">
+          Treść usługi
+          <textarea class="textarea" name="full_description" style="min-height:160px;">{latestVersion?.full_description ?? service.short_description ?? ''}</textarea>
+        </label>
+
+        <button class="btn btn-secondary" type="submit">Zapisz jako draft</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Rekord bazowy</h2>
+      <table class="table">
+        <tbody>
+          <tr><td>Nazwa</td><td><strong>{service.name}</strong></td></tr>
+          <tr><td>Slug</td><td><code>{service.slug}</code></td></tr>
+          <tr><td>Wersje</td><td>{versions.length}</td></tr>
+          <tr>
+            <td>Ostatnia wersja</td>
+            <td>
+              {latestVersion
+                ? <span class={`pill ${latestVersion.status === 'published' ? 'pill-green' : latestVersion.status === 'approved' ? 'pill-yellow' : ''}`}>{latestVersion.status} v{latestVersion.version_no}</span>
+                : <span class="muted">brak</span>
+              }
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {latestVersion?.metadata && (
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--sb-border);">
+          <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--sb-text-3); margin-bottom:8px;">SEO (ostatnia wersja)</div>
+          <p style="font-size:12px; color:var(--sb-text-2);"><strong>Title:</strong> {(latestVersion.metadata as any)?.meta_title ?? '-'}</p>
+          <p style="font-size:12px; color:var(--sb-text-2); margin-top:4px;"><strong>Desc:</strong> {(latestVersion.metadata as any)?.meta_description ?? '-'}</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Wersje treści</h2>
+    {versions.length === 0 ? (
+      <p class="muted">Brak wersji. Użyj przycisku "Generuj z AI" lub utwórz ręczny draft.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Ver</th>
+            <th>Status</th>
+            <th>Źródło</th>
+            <th>Treść (podgląd)</th>
+            <th>Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {versions.map((v) => (
+            <tr>
+              <td>v{v.version_no}</td>
+              <td>
+                <span class={`pill ${v.status === 'published' ? 'pill-green' : v.status === 'approved' ? 'pill-yellow' : v.status === 'draft' ? '' : 'pill-gray'}`}>
+                  {v.status}
+                </span>
+              </td>
+              <td style="font-size:11px; color:var(--sb-text-3);">{(v.metadata as any)?.generated_by ?? 'manual'}</td>
+              <td style="font-size:12px; max-width:360px;">
+                <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:360px;">
+                  {v.full_description?.slice(0, 160) ?? '-'}
+                </div>
+                {(v.metadata as any)?.faq?.length > 0 && (
+                  <div style="font-size:11px; color:var(--sb-green-text); margin-top:4px;">
+                    + {(v.metadata as any).faq.length} FAQ
+                  </div>
+                )}
+              </td>
+              <td>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  {v.status === 'draft' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="approve-version" />
+                      <input type="hidden" name="version_id" value={v.id} />
+                      <input type="hidden" name="client_id" value={service.client_id} />
+                      <button class="btn" type="submit">Approve</button>
+                    </form>
+                  )}
+                  {v.status === 'approved' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="publish-version" />
+                      <input type="hidden" name="version_id" value={v.id} />
+                      <input type="hidden" name="client_id" value={service.client_id} />
+                      <input type="hidden" name="service_base_id" value={service.id} />
+                      <button class="btn btn-secondary" type="submit">Publish live</button>
+                    </form>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+const btn = document.getElementById('btn-ai-generate') as HTMLButtonElement | null;
+const status = document.getElementById('ai-status');
+
+btn?.addEventListener('click', async () => {
+  const clientId   = btn.dataset.clientId!;
+  const serviceId  = btn.dataset.serviceId!;
+  const serviceName = btn.dataset.serviceName!;
+  const serviceSlug = btn.dataset.serviceSlug!;
+
+  btn.disabled = true;
+  btn.textContent = 'Generuję...';
+  if (status) status.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/generate-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'generate-service',
+        clientId,
+        serviceId,
+        serviceName,
+        serviceSlug,
+      }),
+    });
+
+    const json = await res.json();
+
+    if (json.ok) {
+      window.location.href = window.location.pathname + '?ai_generated=1';
+    } else {
+      alert('Błąd AI: ' + json.error);
+      btn.disabled = false;
+      btn.textContent = '✦ Generuj z AI';
+      if (status) status.style.display = 'none';
+    }
+  } catch (e) {
+    alert('Błąd sieci: ' + String(e));
+    btn.disabled = false;
+    btn.textContent = '✦ Generuj z AI';
+    if (status) status.style.display = 'none';
+  }
+});
+</script>

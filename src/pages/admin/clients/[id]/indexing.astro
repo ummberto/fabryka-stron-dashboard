@@ -1,0 +1,50 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getClientById,
+  getIndexingEventsByClientId,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+const events = await getIndexingEventsByClientId(clientId);
+---
+
+<AdminLayout title={`Indexing — ${client.company_name}`}>
+  <div class="card">
+    <h1>Indexing po publish</h1>
+    <p class="muted">
+      Zdarzenia indeksacji przypisane do deploymentów tego klienta.
+    </p>
+  </div>
+
+  <div class="card">
+    {events.length === 0 ? (
+      <p class="muted">Brak indexing events dla tego klienta.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Deployment ID</th>
+            <th>URL</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((item) => (
+            <tr>
+              <td>{item.deployment_id}</td>
+              <td>{item.url}</td>
+              <td><span class="pill">{item.status}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

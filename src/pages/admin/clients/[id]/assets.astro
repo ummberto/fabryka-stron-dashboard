@@ -1,0 +1,263 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createAssetRecord,
+  createSystemLog,
+  getAssetsByClientId,
+  getClientById,
+  updateAssetRecord,
+} from '../../../../lib/client-data';
+import {
+  buildClientAssetPath,
+  uploadClientAsset,
+} from '../../../../lib/supabase';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'upload-asset') {
+    const title = String(formData.get('title') ?? '');
+    const altText = String(formData.get('alt_text') ?? '');
+    const type = String(formData.get('type') ?? 'image');
+    const file = formData.get('file');
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error('Nie wybrano pliku do uploadu');
+    }
+
+    const storagePath = buildClientAssetPath({
+      clientId,
+      fileName: file.name,
+    });
+
+    await uploadClientAsset({
+      path: storagePath,
+      file,
+      contentType: file.type,
+    });
+
+    const asset = await createAssetRecord({
+      client_id: clientId,
+      type,
+      storage_path: storagePath,
+      alt_text: altText || null,
+      title: title || file.name,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'asset_uploaded',
+      message: `Dodano asset ${asset.title ?? asset.storage_path}`,
+      payload_json: {
+        asset_id: asset.id,
+        storage_path: asset.storage_path,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/assets?uploaded=1`);
+  }
+
+  if (action === 'update-asset') {
+    const assetId = String(formData.get('asset_id') ?? '');
+    const title = String(formData.get('title') ?? '');
+    const altText = String(formData.get('alt_text') ?? '');
+    const type = String(formData.get('type') ?? 'image');
+
+    await updateAssetRecord({
+      asset_id: assetId,
+      title: title || null,
+      alt_text: altText || null,
+      type: type || null,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'asset_updated',
+      message: 'Zaktualizowano dane assetu',
+      payload_json: {
+        asset_id: assetId,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/assets?updated=1`);
+  }
+}
+
+const client = await getClientById(clientId);
+const assets = await getAssetsByClientId(clientId);
+
+const url = new URL(Astro.request.url);
+const uploaded = url.searchParams.get('uploaded');
+const updated = url.searchParams.get('updated');
+---
+
+<AdminLayout title={`Asset Library — ${client.company_name}`}>
+  <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    <div>
+      <div class="page-title">Asset Library</div>
+      <div class="page-desc">Upload i zarządzanie mediami klienta. {assets.length} plików.</div>
+    </div>
+    <button id="btn-ai-images" class="btn" data-client-id={clientId}>
+      ✦ Generuj brakujące zdjęcia AI
+    </button>
+  </div>
+
+  <div id="ai-img-status" style="display:none;" class="card">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="width:16px;height:16px;border:2px solid var(--sb-border-2);border-top-color:var(--sb-green);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:13px; color:var(--sb-text-1); font-weight:500;">Runware.ai generuje zdjęcia...</div>
+        <div class="muted">Hero, team, service, galeria — to zajmuje 30–90 sekund</div>
+      </div>
+    </div>
+  </div>
+  <div id="ai-img-result" style="display:none;" class="card">
+    <div style="font-size:13px; font-weight:500; color:var(--sb-green);" id="ai-img-result-text"></div>
+  </div>
+
+  {uploaded && <div class="alert alert-success">Plik został wgrany.</div>}
+  {updated  && <div class="alert alert-success">Dane assetu zaktualizowane.</div>}
+
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Dodaj nowy asset</h2>
+
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="upload-asset" />
+
+        <label class="label">
+          Tytuł
+          <input class="input" type="text" name="title" />
+        </label>
+
+        <label class="label">
+          Typ
+          <select class="select" name="type">
+            <option value="image">image</option>
+            <option value="logo">logo</option>
+            <option value="document">document</option>
+            <option value="gallery">gallery</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Alt text
+          <input class="input" type="text" name="alt_text" />
+        </label>
+
+        <label class="label">
+          Plik
+          <input class="input" type="file" name="file" />
+        </label>
+
+        <button class="btn" type="submit">Wgraj plik</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Podpowiedź operacyjna</h2>
+      <p class="muted">
+        Na razie alt text wpisujesz ręcznie. W kolejnym kroku możemy dodać generator altów
+        albo checklistę brakujących opisów.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Lista assetów</h2>
+
+    {assets.length === 0 ? (
+      <p class="muted">Brak assetów dla tego klienta.</p>
+    ) : (
+      assets.map((asset) => (
+        <div
+          style="border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px;"
+        >
+          <p><strong>Tytuł:</strong> {asset.title ?? '-'}</p>
+          <p><strong>Typ:</strong> {asset.type}</p>
+          <p><strong>Storage path:</strong> {asset.storage_path}</p>
+          <p><strong>Alt text:</strong> {asset.alt_text ?? '-'}</p>
+
+          <form method="POST" style="margin-top:16px;">
+            <input type="hidden" name="action" value="update-asset" />
+            <input type="hidden" name="asset_id" value={asset.id} />
+
+            <label class="label">
+              Tytuł
+              <input class="input" type="text" name="title" value={asset.title ?? ''} />
+            </label>
+
+            <label class="label">
+              Typ
+              <select class="select" name="type">
+                <option value="image" selected={asset.type === 'image'}>image</option>
+                <option value="logo" selected={asset.type === 'logo'}>logo</option>
+                <option value="document" selected={asset.type === 'document'}>document</option>
+                <option value="gallery" selected={asset.type === 'gallery'}>gallery</option>
+              </select>
+            </label>
+
+            <label class="label">
+              Alt text
+              <input class="input" type="text" name="alt_text" value={asset.alt_text ?? ''} />
+            </label>
+
+            <button class="btn btn-secondary" type="submit">Zapisz zmiany</button>
+          </form>
+        </div>
+      ))
+    )}
+  </div>
+</AdminLayout>
+
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+<script>
+const btn = document.getElementById('btn-ai-images') as HTMLButtonElement | null;
+const statusDiv  = document.getElementById('ai-img-status');
+const resultDiv  = document.getElementById('ai-img-result');
+const resultText = document.getElementById('ai-img-result-text');
+
+btn?.addEventListener('click', async () => {
+  const clientId = btn.dataset.clientId!;
+  btn.disabled = true;
+  btn.textContent = 'Generuję...';
+  if (statusDiv) statusDiv.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/generate-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'generate-missing', clientId }),
+    });
+    const json = await res.json();
+
+    if (statusDiv) statusDiv.style.display = 'none';
+
+    if (json.ok) {
+      const count = json.generated?.length ?? 0;
+      const errCount = json.errors?.length ?? 0;
+      if (resultText) resultText.textContent = `✓ Wygenerowano ${count} zdjęć${errCount > 0 ? ` (${errCount} błędów)` : ''}. Odśwież stronę.`;
+      if (resultDiv) resultDiv.style.display = 'block';
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      alert('Błąd Runware: ' + json.error);
+      btn.disabled = false;
+      btn.textContent = '✦ Generuj brakujące zdjęcia AI';
+    }
+  } catch (e) {
+    if (statusDiv) statusDiv.style.display = 'none';
+    alert('Błąd sieci: ' + String(e));
+    btn.disabled = false;
+    btn.textContent = '✦ Generuj brakujące zdjęcia AI';
+  }
+});
+</script>

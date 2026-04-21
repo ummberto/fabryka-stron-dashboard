@@ -1,0 +1,121 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getPublishChecklistForClient,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const checklist = await getPublishChecklistForClient(clientId);
+---
+
+<AdminLayout title={`Publish Checklist — ${checklist.client.company_name}`}>
+  <div class="card">
+    <h1>Publish Checklist</h1>
+    <p class="muted">
+      Bramka jakości przed preview i publish.
+    </p>
+
+    <p>
+      <strong>Gotowy do preview:</strong> {checklist.canPreview ? 'tak' : 'nie'}
+    </p>
+
+    <p>
+      <strong>Gotowy do publish:</strong> {checklist.canPublish ? 'tak' : 'nie'}
+    </p>
+
+    <p>
+      <strong>Zmiany gotowe do publikacji:</strong> {checklist.readyItems}
+    </p>
+  </div>
+
+  <div class="card">
+  <h2>Stan klienta</h2>
+
+  <table class="table">
+    <tbody>
+      <tr>
+        <td>Usługi</td>
+        <td>{checklist.servicesCount}</td>
+      </tr>
+      <tr>
+        <td>Strony</td>
+        <td>{checklist.pagesCount}</td>
+      </tr>
+      <tr>
+        <td>Lokalizacje</td>
+        <td>{checklist.locationsCount}</td>
+      </tr>
+      <tr>
+        <td>Wpisy</td>
+        <td>{checklist.postsCount}</td>
+      </tr>
+      <tr>
+        <td>Assety</td>
+        <td>{checklist.assetQa.totalAssets}</td>
+      </tr>
+      <tr>
+        <td>Brakujące alty</td>
+        <td>{checklist.assetQa.missingAltCount}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+  <div class="card">
+    <h2>Checklist</h2>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Check</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {checklist.checks.map((item) => (
+          <tr>
+            <td>{item.label}</td>
+            <td>
+              <span class="pill">{item.ok ? 'OK' : 'BRAK'}</span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Rzeczy do poprawy</h2>
+
+    {checklist.failedChecks.length === 0 ? (
+      <p class="muted">Brak braków. Klient wygląda dobrze do dalszego flow.</p>
+    ) : (
+      <ul>
+        {checklist.failedChecks.map((item) => (
+          <li>{item.label}</li>
+        ))}
+      </ul>
+    )}
+  </div>
+
+  <div class="card">
+  <h2>Dalszy krok</h2>
+
+  <p style="margin-bottom: 12px;">
+    <a href={`/admin/clients/${clientId}/asset-qa`}>Przejdź do Asset QA</a>
+  </p>
+
+  <p style="margin-bottom: 12px;">
+    <a href={`/admin/clients/${clientId}/preview-diff`}>Przejdź do Preview Diff Center</a>
+  </p>
+
+  <p>
+    <a href={`/admin/clients/${clientId}/publish`}>Przejdź do Preview & Publish</a>
+  </p>
+</div>
+</AdminLayout>

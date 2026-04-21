@@ -1,0 +1,158 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getClientById,
+  getDesignProfileByClientId,
+  getSectionVariantsByClientId,
+} from '../../../../lib/client-data';
+import {
+  runDesignConsistencyCheck,
+  type TemplateFamilyKey,
+} from '../../../../lib/design-system';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+const profile = await getDesignProfileByClientId(clientId);
+const sectionVariants = await getSectionVariantsByClientId(clientId);
+
+const sectionKeysSet = [...new Set(sectionVariants.map((v) => v.section_key))];
+
+const items = runDesignConsistencyCheck({
+  family: (profile?.template_family as TemplateFamilyKey) ?? null,
+  font_pair: profile?.font_pair ?? null,
+  cta_style: profile?.cta_style ?? null,
+  section_rhythm: profile?.section_rhythm ?? null,
+  radius_style: profile?.radius_style ?? null,
+  motion_level: profile?.motion_level ?? null,
+  imagery_style: profile?.imagery_style ?? null,
+  section_keys_set: sectionKeysSet,
+});
+
+const blockers = items.filter((i) => i.severity === 'blocker' && !i.passed);
+const warnings = items.filter((i) => i.severity === 'warning' && !i.passed);
+const passed = items.filter((i) => i.passed);
+const total = items.length;
+const score = Math.round((passed.length / total) * 100);
+
+const canPublishDesign = blockers.length === 0;
+---
+
+<AdminLayout title={`Design Checklist — ${client.company_name}`}>
+  <div class="card">
+    <h1>Design Checklist</h1>
+    <p class="muted">
+      Automatyczna kontrola spójności wizualnej przed publish lub design_edit.
+      Oparta na regułach katalogu design-system.
+    </p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Wynik</h2>
+      <p style="font-size:2.5em; font-weight:700; margin:8px 0; color:{score >= 80 ? '#2d6a2d' : score >= 50 ? '#b45309' : '#a33'};">
+        {score}%
+      </p>
+      <p>
+        {passed.length} / {total} sprawdzeń zaliczonych
+      </p>
+
+      {canPublishDesign ? (
+        <p style="margin-top:12px; color:#2d6a2d; font-weight:600;">
+          Brak blockerów — design gotowy do publish.
+        </p>
+      ) : (
+        <p style="margin-top:12px; color:#a33; font-weight:600;">
+          {blockers.length} blocker(ów) — napraw przed publikacją.
+        </p>
+      )}
+
+      <div style="margin-top:16px;">
+        <a href={`/admin/clients/${clientId}/design`}>Edytuj design profile →</a>
+      </div>
+      <div style="margin-top:6px;">
+        <a href={`/admin/clients/${clientId}/section-variants`}>Edytuj warianty sekcji →</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Aktualny profil</h2>
+      <table class="table">
+        <tbody>
+          <tr><td><strong>Template family</strong></td><td>{profile?.template_family ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Font pair</strong></td><td>{profile?.font_pair ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>CTA style</strong></td><td>{profile?.cta_style ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Section rhythm</strong></td><td>{profile?.section_rhythm ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Radius style</strong></td><td>{profile?.radius_style ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Motion level</strong></td><td>{profile?.motion_level ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Imagery style</strong></td><td>{profile?.imagery_style ?? <span style="color:#a33">BRAK</span>}</td></tr>
+          <tr><td><strong>Sekcje zdef.</strong></td><td>{sectionKeysSet.length > 0 ? sectionKeysSet.join(', ') : <span style="color:#a33">BRAK</span>}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {blockers.length > 0 && (
+    <div class="card" style="border-left:4px solid #a33;">
+      <h2 style="color:#a33;">Blokery ({blockers.length})</h2>
+      <p class="muted" style="font-size:0.85em;">Muszą być naprawione przed publish.</p>
+      <table class="table" style="margin-top:10px;">
+        <thead>
+          <tr><th>Sprawdzenie</th><th>Kategoria</th><th>Uwaga</th></tr>
+        </thead>
+        <tbody>
+          {blockers.map((item) => (
+            <tr>
+              <td style="color:#a33;">{item.label}</td>
+              <td><span class="pill">{item.category}</span></td>
+              <td style="font-size:0.82em; color:#666;">{item.note ?? '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+  {warnings.length > 0 && (
+    <div class="card" style="border-left:4px solid #b45309;">
+      <h2 style="color:#b45309;">Ostrzeżenia ({warnings.length})</h2>
+      <p class="muted" style="font-size:0.85em;">Zalecane do naprawy, ale nie blokują publish.</p>
+      <table class="table" style="margin-top:10px;">
+        <thead>
+          <tr><th>Sprawdzenie</th><th>Kategoria</th><th>Uwaga</th></tr>
+        </thead>
+        <tbody>
+          {warnings.map((item) => (
+            <tr>
+              <td style="color:#b45309;">{item.label}</td>
+              <td><span class="pill">{item.category}</span></td>
+              <td style="font-size:0.82em; color:#666;">{item.note ?? '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+  <div class="card">
+    <h2>Zaliczone ({passed.length})</h2>
+    <table class="table">
+      <thead>
+        <tr><th>Sprawdzenie</th><th>Kategoria</th><th>Severity</th></tr>
+      </thead>
+      <tbody>
+        {passed.map((item) => (
+          <tr>
+            <td style="color:#2d6a2d;">{item.label}</td>
+            <td><span class="pill">{item.category}</span></td>
+            <td style="font-size:0.82em; color:#888;">{item.severity}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</AdminLayout>

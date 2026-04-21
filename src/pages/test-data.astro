@@ -1,0 +1,26 @@
+---
+import { getClientData } from '../lib/client-data';
+
+const clientId = import.meta.env.TEST_CLIENT_ID;
+
+let data: unknown = null;
+let errorMsg: string | null = null;
+
+if (!clientId) {
+  errorMsg = 'Brak TEST_CLIENT_ID w .env';
+} else {
+  try {
+    data = await getClientData(clientId);
+  } catch (e) {
+    errorMsg = e instanceof Error ? e.message : String(e);
+  }
+}
+---
+
+<html>
+<head><title>test-data</title></head>
+<body>
+  {errorMsg && <pre style="color:red">BŁĄD: {errorMsg}</pre>}
+  {data && <pre>{JSON.stringify(data, null, 2)}</pre>}
+</body>
+</html>

@@ -1,0 +1,408 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { storeCreate } from '../../../lib/intake-store';
+
+let error: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  try {
+    const fd = await Astro.request.formData();
+
+    const companyName = String(fd.get('company_name') ?? '').trim();
+    if (!companyName) throw new Error('Nazwa firmy jest wymagana.');
+
+    // Usługi dodatkowe — dynamiczne wiersze
+    const extraOffers: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const val = String(fd.get(`extra_offer_${i}`) ?? '').trim();
+      if (val) extraOffers.push(val);
+    }
+
+    // Obszar działania — textarea przecinkami lub nowa linia
+    const serviceAreaRaw = String(fd.get('service_area') ?? '');
+    const serviceArea = serviceAreaRaw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // Przewagi — textarea
+    const benefitsRaw = String(fd.get('benefits') ?? '');
+    const benefits = benefitsRaw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const project = storeCreate({
+      company_name: companyName,
+      industry: String(fd.get('industry') ?? '').trim() || null,
+      main_offer: String(fd.get('main_offer') ?? '').trim() || null,
+      extra_offers: extraOffers.length > 0 ? extraOffers : null,
+      main_location: String(fd.get('main_location') ?? '').trim() || null,
+      service_area: serviceArea.length > 0 ? serviceArea : null,
+      target_audience: String(fd.get('target_audience') ?? '').trim() || null,
+      benefits: benefits.length > 0 ? benefits : null,
+      tone_of_voice: String(fd.get('tone_of_voice') ?? '').trim() || null,
+      website_goal: String(fd.get('website_goal') ?? '').trim() || null,
+      phone: String(fd.get('phone') ?? '').trim() || null,
+      email: String(fd.get('email') ?? '').trim() || null,
+      has_blog: fd.get('has_blog') === 'on',
+      has_faq: fd.get('has_faq') === 'on',
+      has_reviews: fd.get('has_reviews') === 'on',
+      has_case_studies: fd.get('has_case_studies') === 'on',
+      site_type_preference: String(fd.get('site_type_preference') ?? '').trim() || null,
+      competitors: String(fd.get('competitors') ?? '').trim() || null,
+      current_url: String(fd.get('current_url') ?? '').trim() || null,
+      manual_keywords: String(fd.get('manual_keywords') ?? '').trim() || null,
+      target_stack: String(fd.get('target_stack') ?? 'Next.js + Tailwind CSS'),
+      has_location_pages: String(fd.get('has_location_pages') ?? '').trim() || null,
+    });
+
+    return Astro.redirect(`/admin/intake/${project.id}`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Nieznany błąd';
+  }
+}
+---
+
+<AdminLayout title="Nowy projekt — Intake">
+  <div class="card">
+    <h1>Nowy projekt strony</h1>
+    <p class="muted">
+      Wypełnij brief. System wzbogaci dane AI i wygeneruje metaprompt gotowy do wklejenia w Claude Code / Codex.
+    </p>
+    {error && <p class="alert alert-danger" style="margin-top:12px;">{error}</p>}
+  </div>
+
+  <form method="POST">
+
+    <!-- SEKCJA 1: Firma -->
+    <div class="card">
+      <h2>1. Firma</h2>
+
+      <label class="label">
+        Nazwa firmy <span style="color:var(--sb-red)">*</span>
+        <input class="input" type="text" name="company_name" placeholder="np. Hydro-Max Poznań" required />
+      </label>
+
+      <label class="label">
+        Branża
+        <input class="input" type="text" name="industry" placeholder="np. hydraulika, fotowoltaika, stomatologia" />
+      </label>
+
+      <div class="grid-2">
+        <label class="label">
+          Telefon
+          <input class="input" type="text" name="phone" placeholder="np. 600 123 456" />
+        </label>
+        <label class="label">
+          E-mail
+          <input class="input" type="email" name="email" placeholder="kontakt@firma.pl" />
+        </label>
+      </div>
+
+      <label class="label">
+        Aktualna strona www (jeśli istnieje)
+        <input class="input" type="text" name="current_url" placeholder="np. https://stara-strona.pl" />
+      </label>
+    </div>
+
+    <!-- SEKCJA 2: Oferta -->
+    <div class="card">
+      <h2>2. Oferta</h2>
+
+      <label class="label">
+        Główna usługa / oferta
+        <input class="input" type="text" name="main_offer" placeholder="np. pogotowie hydrauliczne i instalacje wod-kan" />
+      </label>
+
+      <div>
+        <p class="label" style="margin-bottom:8px;">Dodatkowe usługi</p>
+        <div id="extra-offers-list">
+          <div class="extra-offer-row" style="display:flex;gap:8px;margin-bottom:6px;">
+            <input class="input" type="text" name="extra_offer_0" placeholder="np. udrażnianie rur" style="flex:1;" />
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost" style="margin-top:4px;" onclick="addExtraOffer()">+ Dodaj usługę</button>
+      </div>
+    </div>
+
+    <!-- SEKCJA 3: Lokalizacja -->
+    <div class="card">
+      <h2>3. Lokalizacja</h2>
+
+      <label class="label">
+        Lokalizacja główna
+        <input class="input" type="text" name="main_location" placeholder="np. Poznań" />
+      </label>
+
+      <label class="label">
+        Obszar działania (oddziel przecinkami lub enterami)
+        <textarea class="textarea" name="service_area" rows="3" id="service_area"
+          placeholder="np. Poznań, Luboń, Swarzędz, Komorniki, Mosina"></textarea>
+      </label>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button type="button" id="suggest-cities-btn" class="btn btn-ghost" style="font-size:0.85em;">
+          Sugeruj okoliczne →
+        </button>
+        <span id="cities-loading" style="display:none; font-size:0.85em; color:var(--sb-text-3);">
+          Szukam miast...
+        </span>
+      </div>
+      <div id="city-suggestions" style="display:none; margin-top:10px; padding:12px;
+           background:var(--sb-surface); border:1px solid var(--sb-border); border-radius:6px;">
+        <p style="font-size:0.8em; color:var(--sb-text-3); margin-bottom:8px;">
+          Kliknij miasto aby dodać do obszaru działania:
+        </p>
+        <div id="city-chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 4: Strategia -->
+    <div class="card">
+      <h2>4. Strategia</h2>
+
+      <label class="label">
+        Cel strony
+        <select class="select" name="website_goal">
+          <option value="pozyskiwanie leadów telefonicznych i z formularza">Leady (telefon + formularz)</option>
+          <option value="sprzedaż online">Sprzedaż online</option>
+          <option value="budowanie wizerunku eksperta">Wizerunek eksperta</option>
+          <option value="lokalny SEO i widoczność w Google">Lokalny SEO / widoczność</option>
+          <option value="prezentacja oferty i kontakt">Prezentacja oferty</option>
+        </select>
+      </label>
+
+      <label class="label">
+        Przewagi firmy (każda w osobnej linii)
+        <textarea class="textarea" name="benefits" rows="4"
+          placeholder="np.&#10;szybki dojazd&#10;dostępność 24/7&#10;uczciwa wycena&#10;10 lat doświadczenia"></textarea>
+      </label>
+
+      <label class="label">
+        Grupa docelowa
+        <input class="input" type="text" name="target_audience"
+          placeholder="np. właściciele mieszkań, domów i małe firmy w Poznaniu" />
+      </label>
+
+      <label class="label">
+        Ton komunikacji
+        <select class="select" name="tone_of_voice">
+          <option value="profesjonalny, konkretny, zaufany">Profesjonalny i konkretny</option>
+          <option value="ciepły, przyjazny, pomocny">Ciepły i pomocny</option>
+          <option value="ekspercki, techniczny, precyzyjny">Ekspercki i techniczny</option>
+          <option value="energiczny, dynamiczny, nowoczesny">Energiczny i nowoczesny</option>
+          <option value="luksusowy, premium, ekskluzywny">Premium i ekskluzywny</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- SEKCJA 5: Opcje strony -->
+    <div class="card">
+      <h2>5. Opcje strony</h2>
+
+      <div class="grid-2">
+        <div>
+          <label class="label">
+            Typ strony
+            <select class="select" name="site_type_preference">
+              <option value="">Dopasuj automatycznie</option>
+              <option value="landing page">Landing page (1 strona)</option>
+              <option value="strona firmowa 5-7 podstron">Strona firmowa (5–7 podstron)</option>
+              <option value="lokalna strona usługowa z podstronami lokalizacji">Lokalna SEO (podstrony lokalizacji)</option>
+              <option value="strona ekspercka / personal brand">Ekspert / personal brand</option>
+              <option value="one-page">One-page scroll</option>
+            </select>
+          </label>
+
+          <label class="label" style="margin-top:16px;">
+            Stack techniczny
+            <select class="select" name="target_stack">
+              <option value="Next.js + Tailwind CSS">Next.js + Tailwind CSS</option>
+              <option value="Astro + Tailwind CSS">Astro + Tailwind CSS</option>
+              <option value="HTML + CSS + Alpine.js">HTML + CSS + Alpine.js</option>
+              <option value="Vue 3 + Nuxt + Tailwind CSS">Vue 3 / Nuxt + Tailwind CSS</option>
+            </select>
+          </label>
+        </div>
+
+        <div>
+          <p class="label" style="margin-bottom:10px;">Elementy strony</p>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_faq" checked />
+            <span>Sekcja FAQ</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_reviews" checked />
+            <span>Opinie / referencje</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_blog" />
+            <span>Blog</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" name="has_case_studies" />
+            <span>Case studies / realizacje</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 6: Opcjonalne -->
+    <div class="card">
+      <h2>6. Opcjonalne</h2>
+
+      <label class="label">
+        Konkurenci (URL-e lub nazwy, opcjonalnie)
+        <input class="input" type="text" name="competitors"
+          placeholder="np. konkurent1.pl, Firma ABC" />
+      </label>
+
+      <label class="label">
+        Słowa kluczowe podane ręcznie (opcjonalnie)
+        <input class="input" type="text" name="manual_keywords" id="manual_keywords"
+          placeholder="np. hydraulik awaryjny, szybka naprawa wycieków" />
+      </label>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button type="button" id="suggest-keywords-btn" class="btn btn-ghost" style="font-size:0.85em;">
+          Sugeruj słowa kluczowe →
+        </button>
+        <span id="keywords-loading" style="display:none; font-size:0.85em; color:var(--sb-text-3);">
+          Generuję frazy...
+        </span>
+      </div>
+      <div id="keyword-suggestions" style="display:none; margin-top:10px; padding:12px;
+           background:var(--sb-surface); border:1px solid var(--sb-border); border-radius:6px;">
+        <p style="font-size:0.8em; color:var(--sb-text-3); margin-bottom:8px;">
+          Kliknij frazę aby dodać do słów kluczowych:
+        </p>
+        <div id="keyword-chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="display:flex;gap:12px;">
+      <button class="btn" type="submit">Zapisz i generuj metaprompt →</button>
+      <a class="btn btn-ghost" href="/admin/intake">Anuluj</a>
+    </div>
+
+  </form>
+</AdminLayout>
+
+<script>
+  let extraCount = 1;
+
+  function addExtraOffer() {
+    if (extraCount >= 9) return;
+    const list = document.getElementById('extra-offers-list')!;
+    const row = document.createElement('div');
+    row.className = 'extra-offer-row';
+    row.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
+    row.innerHTML = `<input class="input" type="text" name="extra_offer_${extraCount}" placeholder="usługa dodatkowa" style="flex:1;" />
+      <button type="button" class="btn btn-ghost" onclick="this.parentElement.remove()">✕</button>`;
+    list.appendChild(row);
+    extraCount++;
+  }
+
+  (window as any).addExtraOffer = addExtraOffer;
+
+  // ─── Sugestie miast i słów kluczowych ───────────────────────────────────────
+
+  function getExtraOfferValues() {
+    var results = [];
+    for (var i = 0; i < 10; i++) {
+      var el = document.querySelector('[name="extra_offer_' + i + '"]') as HTMLInputElement | null;
+      if (el && el.value.trim()) results.push(el.value.trim());
+    }
+    return results;
+  }
+
+  function renderChips(containerId: string, items: string[], onClickFn: (item: string, chip: HTMLElement) => void) {
+    var container = document.getElementById(containerId)!;
+    container.innerHTML = '';
+    items.forEach(function(item) {
+      var chip = document.createElement('span');
+      chip.textContent = item;
+      chip.style.cssText = 'cursor:pointer; padding:4px 10px; border-radius:20px; font-size:0.82em;'
+        + ' background:var(--sb-surface-2,#222); border:1px solid var(--sb-border); color:var(--sb-text-1);'
+        + ' transition:background 0.15s;';
+      chip.addEventListener('mouseenter', function() {
+        chip.style.background = 'var(--sb-green, #22c55e)';
+        chip.style.color = '#000';
+        chip.style.borderColor = 'var(--sb-green, #22c55e)';
+      });
+      chip.addEventListener('mouseleave', function() {
+        chip.style.background = 'var(--sb-surface-2,#222)';
+        chip.style.color = 'var(--sb-text-1)';
+        chip.style.borderColor = 'var(--sb-border)';
+      });
+      chip.addEventListener('click', function() { onClickFn(item, chip); });
+      container.appendChild(chip);
+    });
+  }
+
+  function addCityToArea(city: string, chip: HTMLElement) {
+    var ta = document.getElementById('service_area') as HTMLTextAreaElement;
+    var cities = ta.value.trim()
+      ? ta.value.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean)
+      : [];
+    if (!cities.includes(city)) { cities.push(city); ta.value = cities.join(', '); }
+    chip.style.opacity = '0.4';
+    chip.style.pointerEvents = 'none';
+  }
+
+  function addKeyword(kw: string, chip: HTMLElement) {
+    var input = document.getElementById('manual_keywords') as HTMLInputElement;
+    var existing = input.value.trim()
+      ? input.value.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : [];
+    if (!existing.includes(kw)) { existing.push(kw); input.value = existing.join(', '); }
+    chip.style.opacity = '0.4';
+    chip.style.pointerEvents = 'none';
+  }
+
+  document.getElementById('suggest-cities-btn')!.addEventListener('click', function() {
+    var location = (document.querySelector('[name="main_location"]') as HTMLInputElement).value.trim();
+    if (!location) { alert('Wypełnij najpierw pole "Lokalizacja główna"'); return; }
+    var btn = document.getElementById('suggest-cities-btn') as HTMLButtonElement;
+    var loading = document.getElementById('cities-loading')!;
+    var box = document.getElementById('city-suggestions')!;
+    btn.disabled = true; btn.textContent = 'Szukam...'; loading.style.display = 'inline';
+    fetch('/api/intake-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'cities', location, service_area: (document.getElementById('service_area') as HTMLTextAreaElement).value.trim() }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false; btn.textContent = 'Sugeruj okoliczne →'; loading.style.display = 'none';
+      if (!data.ok) { alert('Błąd: ' + data.error); return; }
+      box.style.display = 'block';
+      renderChips('city-chips', data.suggestions, addCityToArea);
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = 'Sugeruj okoliczne →'; loading.style.display = 'none'; });
+  });
+
+  document.getElementById('suggest-keywords-btn')!.addEventListener('click', function() {
+    var mainOffer = (document.querySelector('[name="main_offer"]') as HTMLInputElement).value.trim();
+    var extras = getExtraOfferValues();
+    var location = (document.querySelector('[name="main_location"]') as HTMLInputElement).value.trim();
+    var services = [mainOffer, ...extras].filter(Boolean);
+    if (!services.length) { alert('Wypełnij najpierw pole "Główna usługa"'); return; }
+    var btn = document.getElementById('suggest-keywords-btn') as HTMLButtonElement;
+    var loading = document.getElementById('keywords-loading')!;
+    var box = document.getElementById('keyword-suggestions')!;
+    btn.disabled = true; btn.textContent = 'Generuję...'; loading.style.display = 'inline';
+    fetch('/api/intake-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'keywords', location, services }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false; btn.textContent = 'Sugeruj słowa kluczowe →'; loading.style.display = 'none';
+      if (!data.ok) { alert('Błąd: ' + data.error); return; }
+      box.style.display = 'block';
+      renderChips('keyword-chips', data.suggestions, addKeyword);
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = 'Sugeruj słowa kluczowe →'; loading.style.display = 'none'; });
+  });
+</script>

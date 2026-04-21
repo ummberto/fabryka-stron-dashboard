@@ -1,0 +1,53 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getClients } from '../../lib/client-data';
+
+const clients = await getClients();
+---
+
+<AdminLayout title="Admin — Klienci">
+  <div class="card" style="background:linear-gradient(135deg, #1a2e1a 0%, #1a1f2e 100%); border-color:#2d4a2d;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+      <div>
+        <div class="page-title" style="color:#6fcf6f;">Intake → Metaprompt</div>
+        <div class="page-desc">Wypełnij brief, AI generuje strategię + metaprompt do Claude Code / Codex.</div>
+      </div>
+      <a href="/admin/intake" class="btn" style="flex-shrink:0; background:#2d6a2d; border-color:#3d8a3d;">
+        Otwórz Intake →
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+    <div>
+      <div class="page-title">Client Hub</div>
+      <div class="page-desc">Lista klientów w systemie.</div>
+    </div>
+    <a href="/admin/clients/new" class="btn" style="flex-shrink:0;">+ Nowy klient</a>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Firma</th>
+          <th>Branża</th>
+          <th>Status</th>
+          <th>Akcja</th>
+        </tr>
+      </thead>
+      <tbody>
+        {clients.map((client) => (
+          <tr>
+            <td>{client.company_name}</td>
+            <td>{client.industry ?? '-'}</td>
+            <td><span class="pill">{client.status}</span></td>
+            <td>
+              <a href={`/admin/clients/${client.id}`}>Otwórz klienta</a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</AdminLayout>

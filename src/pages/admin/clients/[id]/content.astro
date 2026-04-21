@@ -1,0 +1,122 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getAssetsByClientId,
+  getClientById,
+  getClientLocations,
+  getClientPages,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+const pages = await getClientPages(clientId);
+const locations = await getClientLocations(clientId);
+const assets = await getAssetsByClientId(clientId);
+---
+---
+
+<AdminLayout title={`Content Studio — ${client.company_name}`}>
+  <div class="card">
+    <h1>Content Studio</h1>
+    <p class="muted">
+      Edycja i wersjonowanie stron stałych oraz lokalizacji klienta.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Strony stałe</h2>
+
+    {pages.length === 0 ? (
+      <p class="muted">Brak stron dla klienta.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Slug</th>
+            <th>Tytuł</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pages.map((page) => (
+            <tr>
+              <td>{page.slug}</td>
+              <td>{page.title ?? '-'}</td>
+              <td>
+                <a href={`/admin/pages/${page.id}`}>Otwórz wersje strony</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+   <div class="card">
+    <h2>Lokalizacje</h2>
+
+    {locations.length === 0 ? (
+      <p class="muted">Brak lokalizacji dla klienta.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Miasto</th>
+            <th>Slug</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {locations.map((location) => (
+            <tr>
+              <td>{location.city}</td>
+              <td>{location.slug}</td>
+              <td>
+                <a href={`/admin/locations/${location.id}`}>Otwórz wersje lokalizacji</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Assety</h2>
+
+    {assets.length === 0 ? (
+      <p class="muted">Brak assetów klienta.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tytuł</th>
+            <th>Typ</th>
+            <th>Alt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map((asset) => (
+            <tr>
+              <td>{asset.title ?? '-'}</td>
+              <td>{asset.type}</td>
+              <td>{asset.alt_text ?? '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+
+    <p style="margin-top:16px;">
+      <a href={`/admin/clients/${clientId}/assets`}>Przejdź do pełnej Asset Library</a>
+    </p>
+    <p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/design`}>Przejdź do Design Studio</a>
+</p>
+  </div>
+</AdminLayout>

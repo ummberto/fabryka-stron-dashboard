@@ -1,0 +1,252 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createSystemLog,
+  getClientById,
+  getDesignProfileByClientId,
+  getSectionVariantsByClientId,
+  upsertSectionVariant,
+} from '../../../../lib/client-data';
+import {
+  SECTION_CATALOG,
+  TEMPLATE_FAMILIES,
+  getRecommendedSections,
+  type TemplateFamilyKey,
+} from '../../../../lib/design-system';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'save-section-variant') {
+    const route = String(formData.get('route') ?? '');
+    const sectionKey = String(formData.get('section_key') ?? '');
+    const variantKey = String(formData.get('variant_key') ?? '');
+
+    const variant = await upsertSectionVariant({
+      client_id: clientId,
+      route,
+      section_key: sectionKey,
+      variant_key: variantKey,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'section_variant_updated',
+      message: `Zapisano wariant sekcji: ${sectionKey} → ${variantKey} na ${route}`,
+      payload_json: {
+        section_variant_id: variant.id,
+        route,
+        section_key: sectionKey,
+        variant_key: variantKey,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/section-variants?saved=1`);
+  }
+
+  if (action === 'apply-recommended') {
+    const family = String(formData.get('family') ?? 'universal') as TemplateFamilyKey;
+    const route = String(formData.get('route') ?? '/');
+    const recommended = getRecommendedSections(family);
+
+    for (const rec of recommended) {
+      await upsertSectionVariant({
+        client_id: clientId,
+        route,
+        section_key: rec.section_key,
+        variant_key: rec.recommended_variant,
+      });
+    }
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'section_variants_preset_applied',
+      message: `Zastosowano rekomendowane warianty sekcji dla family ${family} na route ${route}`,
+      payload_json: { family, route, count: recommended.length },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/section-variants?preset=1`);
+  }
+}
+
+const client = await getClientById(clientId);
+const variants = await getSectionVariantsByClientId(clientId);
+const profile = await getDesignProfileByClientId(clientId);
+
+const currentFamily = (profile?.template_family ?? 'universal') as TemplateFamilyKey;
+const recommended = getRecommendedSections(currentFamily);
+const sectionKeys = Object.keys(SECTION_CATALOG);
+
+const url = new URL(Astro.request.url);
+const saved = url.searchParams.get('saved');
+const preset = url.searchParams.get('preset');
+
+// Pogrupuj zapisane warianty po route
+const variantsByRoute = variants.reduce<Record<string, typeof variants>>((acc, v) => {
+  if (!acc[v.route]) acc[v.route] = [];
+  acc[v.route].push(v);
+  return acc;
+}, {});
+---
+
+<AdminLayout title={`Section Variants — ${client.company_name}`}>
+  <div class="card">
+    <h1>Section Variants Studio</h1>
+    <p class="muted">
+      Kontrolowane warianty sekcji per route. Dane te trafiają do snapshotu i sterują layoutem przy budowaniu strony.
+    </p>
+    {saved && <p><strong>Zapisano wariant sekcji.</strong></p>}
+    {preset && <p><strong>Zastosowano rekomendowane warianty dla family: {currentFamily}.</strong></p>}
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Ustaw wariant ręcznie</h2>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="save-section-variant" />
+
+        <label class="label">
+          Route
+          <select class="select" name="route">
+            <option value="/">/  (strona główna)</option>
+            <option value="/o-nas">/o-nas</option>
+            <option value="/kontakt">/kontakt</option>
+            <option value="/uslugi">/uslugi (lista)</option>
+            <option value="/lokalizacje">/lokalizacje (lista)</option>
+          </select>
+        </label>
+
+        <label class="label">
+          Section key
+          <select class="select" name="section_key" id="section-key-select">
+            {sectionKeys.map((key) => (
+              <option value={key}>{key} — {SECTION_CATALOG[key].label}</option>
+            ))}
+          </select>
+        </label>
+
+        <label class="label">
+          Variant key
+          <select class="select" name="variant_key">
+            {Object.keys(SECTION_CATALOG[sectionKeys[0]].variants).map((v) => (
+              <option value={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+
+        <button class="btn" type="submit">Zapisz wariant</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Zastosuj rekomendowane</h2>
+      <p class="muted" style="font-size:0.85em;">
+        Wpisuje rekomendowane warianty dla aktualnej template family ({currentFamily}) na wybrany route.
+        Nadpisuje istniejące warianty dla tej trasy.
+      </p>
+
+      <form method="POST" style="margin-top:12px;">
+        <input type="hidden" name="action" value="apply-recommended" />
+        <input type="hidden" name="family" value={currentFamily} />
+
+        <label class="label">
+          Route
+          <select class="select" name="route">
+            <option value="/">/ (strona główna)</option>
+            <option value="/o-nas">/o-nas</option>
+            <option value="/kontakt">/kontakt</option>
+          </select>
+        </label>
+
+        <button class="btn btn-secondary" type="submit">Zastosuj rekomendowane ({currentFamily})</button>
+      </form>
+
+      <div style="margin-top:16px;">
+        <p style="font-size:0.85em; font-weight:600; margin-bottom:6px;">Rekomendacje dla {currentFamily}:</p>
+        <table class="table">
+          <thead>
+            <tr><th>Sekcja</th><th>Wariant</th></tr>
+          </thead>
+          <tbody>
+            {recommended.map((r) => (
+              <tr>
+                <td>{r.section_key}</td>
+                <td><span class="pill">{r.recommended_variant}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Katalog sekcji i wariantów</h2>
+    <p class="muted" style="font-size:0.85em;">Referencyjna lista wszystkich dostępnych sekcji i ich wariantów.</p>
+
+    <table class="table" style="margin-top:12px;">
+      <thead>
+        <tr>
+          <th>Section key</th>
+          <th>Sekcja</th>
+          <th>Dostępne warianty</th>
+        </tr>
+      </thead>
+      <tbody>
+        {Object.entries(SECTION_CATALOG).map(([key, def]) => (
+          <tr>
+            <td><code>{key}</code></td>
+            <td>{def.label}</td>
+            <td style="font-size:0.82em;">
+              {Object.entries(def.variants).map(([vk, vdesc]) => (
+                <div><span class="pill">{vk}</span> {vdesc}</div>
+              ))}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Zapisane warianty ({variants.length})</h2>
+
+    {variants.length === 0 ? (
+      <p class="muted">Brak zapisanych wariantów sekcji.</p>
+    ) : (
+      Object.entries(variantsByRoute).map(([route, routeVariants]) => (
+        <div style="margin-bottom:20px;">
+          <h3 style="font-size:0.95em; margin-bottom:8px; color:#555;">{route}</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Section key</th>
+                <th>Variant key</th>
+                <th>Opis wariantu</th>
+              </tr>
+            </thead>
+            <tbody>
+              {routeVariants.map((item) => (
+                <tr>
+                  <td>{item.section_key}</td>
+                  <td><span class="pill">{item.variant_key}</span></td>
+                  <td style="font-size:0.82em; color:#666;">
+                    {SECTION_CATALOG[item.section_key]?.variants[item.variant_key] ?? '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))
+    )}
+  </div>
+</AdminLayout>

@@ -1,0 +1,289 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { storeGetById } from '../../../lib/intake-store';
+
+const { id } = Astro.params;
+if (!id) throw new Error('Brak id');
+
+const project = storeGetById(id);
+const enrichment = project.enrichment_json as Record<string, unknown> | null;
+
+const statusLabel: Record<string, string> = {
+  raw: 'Oczekuje na wzbogacenie',
+  enriching: 'Trwa generowanie...',
+  ready: 'Gotowy',
+  error: 'Błąd',
+};
+---
+
+<AdminLayout title={`Intake — ${project.company_name}`}>
+
+  <div class="card">
+    <h1>{project.company_name}</h1>
+    <p class="muted">
+      {project.industry ?? '-'} · {project.main_location ?? '-'} ·
+      <strong>Status: </strong>
+      <span class={`pill ${project.status === 'ready' ? 'pill-green' : project.status === 'error' ? 'pill-red' : 'pill-yellow'}`}>
+        {statusLabel[project.status] ?? project.status}
+      </span>
+    </p>
+    <p style="margin-top:8px; display:flex; gap:16px; align-items:center;">
+      <a href="/admin/intake">← Lista projektów</a>
+      <a class="btn btn-ghost" href={`/admin/intake/${project.id}/edit`} style="font-size:0.9em;">
+        Edytuj brief
+      </a>
+    </p>
+  </div>
+
+  <!-- STAN: RAW — pokaż przycisk enrichment -->
+  {project.status === 'raw' && (
+    <div class="card">
+      <h2>Wzbogać dane i generuj metaprompt</h2>
+      <p class="muted">
+        Jeden call do AI (Claude). System doda SEO keywords, strukturę stron, USP i CTA,
+        a następnie złoży gotowy metaprompt.
+      </p>
+      <button id="enrich-btn" class="btn" style="margin-top:16px;">
+        Wzbogać dane i generuj metaprompt →
+      </button>
+      <p id="enrich-status" class="muted" style="margin-top:8px; display:none;">
+        Trwa generowanie — zwykle 15–30 sekund...
+      </p>
+    </div>
+  )}
+
+  <!-- STAN: ENRICHING — polling -->
+  {project.status === 'enriching' && (
+    <div class="card" id="enriching-card">
+      <h2>Trwa generowanie...</h2>
+      <p class="muted">AI analizuje dane i buduje strategię. Odśwież za chwilę.</p>
+    </div>
+  )}
+
+  <!-- STAN: READY — pokaż wyniki -->
+  {project.status === 'ready' && enrichment && (
+    <>
+      <!-- Enrichment summary -->
+      <div class="grid-2">
+        <div class="card">
+          <h2>Strategia strony</h2>
+          <p><strong>Typ:</strong> {String((enrichment as any).recommended_site_type ?? '-')}</p>
+          <p><strong>Liczba podstron:</strong> {String((enrichment as any).recommended_page_count ?? '-')}</p>
+          <p style="margin-top:8px;"><strong>Pozycjonowanie:</strong> {String((enrichment as any).brand_positioning?.positioning ?? '-')}</p>
+          <p><strong>Ton:</strong> {String((enrichment as any).brand_positioning?.tone ?? '-')}</p>
+
+          {(enrichment as any).usp && (
+            <div style="margin-top:12px;">
+              <strong>USP:</strong>
+              <ul style="margin:6px 0 0 16px; font-size:0.9em;">
+                {((enrichment as any).usp as string[]).map((u: string) => <li>{u}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div class="card">
+          <h2>Konwersja i CTA</h2>
+          {(enrichment as any).conversion_strategy && (
+            <>
+              <p><strong>Główne CTA:</strong> {String((enrichment as any).conversion_strategy.main_cta)}</p>
+              <p><strong>Drugie CTA:</strong> {String((enrichment as any).conversion_strategy.secondary_cta)}</p>
+              <div style="margin-top:12px;">
+                <strong>Elementy zaufania:</strong>
+                <ul style="margin:6px 0 0 16px; font-size:0.9em;">
+                  {((enrichment as any).conversion_strategy.trust_elements as string[]).map((t: string) => <li>{t}</li>)}
+                </ul>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <!-- SEO Keywords -->
+      <div class="card">
+        <h2>SEO Keywords</h2>
+        {(enrichment as any).seo_keywords && (
+          <div class="grid-2">
+            <div>
+              <p class="muted" style="font-size:0.8em; text-transform:uppercase; margin-bottom:6px;">Główne</p>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+                {((enrichment as any).seo_keywords.primary as string[]).map((k: string) => <span class="pill pill-green">{k}</span>)}
+              </div>
+              <p class="muted" style="font-size:0.8em; text-transform:uppercase; margin-bottom:6px;">Wspierające</p>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                {((enrichment as any).seo_keywords.secondary as string[]).map((k: string) => <span class="pill">{k}</span>)}
+              </div>
+            </div>
+            <div>
+              <p class="muted" style="font-size:0.8em; text-transform:uppercase; margin-bottom:6px;">Lokalne warianty</p>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+                {((enrichment as any).seo_keywords.local_variants as string[]).map((k: string) => <span class="pill pill-yellow">{k}</span>)}
+              </div>
+              <p class="muted" style="font-size:0.8em; text-transform:uppercase; margin-bottom:6px;">Long-tail</p>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                {((enrichment as any).seo_keywords.long_tail as string[]).map((k: string) => <span class="pill">{k}</span>)}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <!-- Struktura stron -->
+      {(enrichment as any).pages && (
+        <div class="card">
+          <h2>Struktura podstron</h2>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Podstrona</th>
+                <th>Slug</th>
+                <th>Cel</th>
+                <th>Główna fraza</th>
+                <th>Sekcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {((enrichment as any).pages as any[]).map((p: any) => (
+                <tr>
+                  <td><strong>{p.name}</strong></td>
+                  <td><code>/{p.slug}</code></td>
+                  <td style="font-size:0.85em;">{p.goal}</td>
+                  <td style="font-size:0.85em;">{p.primary_keywords?.[0] ?? '-'}</td>
+                  <td style="font-size:0.8em; color:var(--sb-text-3);">{(p.sections as string[]).join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <!-- METAPROMPT -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h2 style="margin:0;">Metaprompt gotowy do skopiowania</h2>
+          <button id="copy-btn" class="btn">Kopiuj metaprompt</button>
+        </div>
+        <p class="muted" style="margin-bottom:12px;">
+          Wklej poniższy prompt bezpośrednio do Claude Code, Codex lub innego generatora kodu.
+        </p>
+        <textarea
+          id="metaprompt"
+          readonly
+          style="width:100%; min-height:500px; font-family:monospace; font-size:0.82em;
+                 background:var(--sb-base); border:1px solid var(--sb-border);
+                 border-radius:6px; padding:16px; color:var(--sb-text-1);
+                 resize:vertical; line-height:1.5;"
+        >{project.metaprompt}</textarea>
+        <p id="copy-feedback" class="muted" style="margin-top:6px; display:none;">
+          Skopiowano do schowka!
+        </p>
+      </div>
+
+      <!-- Ponów enrichment -->
+      <div class="card">
+        <h2>Ponów wzbogacenie</h2>
+        <p class="muted">Możesz wygenerować nowy metaprompt na podstawie tych samych danych.</p>
+        <button id="re-enrich-btn" class="btn btn-secondary" style="margin-top:12px;">
+          Generuj ponownie
+        </button>
+      </div>
+    </>
+  )}
+
+  <!-- Dane briefu -->
+  <div class="card">
+    <h2>Dane briefu</h2>
+    <div class="grid-2">
+      <div>
+        <p><strong>Główna oferta:</strong> {project.main_offer ?? '-'}</p>
+        <p><strong>Dodatkowe usługi:</strong> {(project.extra_offers ?? []).join(', ') || '-'}</p>
+        <p><strong>Lokalizacja:</strong> {project.main_location ?? '-'}</p>
+        <p><strong>Obszar:</strong> {(project.service_area ?? []).join(', ') || '-'}</p>
+        <p><strong>Cel strony:</strong> {project.website_goal ?? '-'}</p>
+      </div>
+      <div>
+        <p><strong>Grupa docelowa:</strong> {project.target_audience ?? '-'}</p>
+        <p><strong>Ton:</strong> {project.tone_of_voice ?? '-'}</p>
+        <p><strong>Stack:</strong> {project.target_stack ?? '-'}</p>
+        <p><strong>Typ strony:</strong> {project.site_type_preference ?? 'auto'}</p>
+        <p><strong>Data:</strong> {new Date(project.created_at).toLocaleString('pl-PL')}</p>
+      </div>
+    </div>
+  </div>
+
+</AdminLayout>
+
+<script is:inline define:vars={{ projectId: project.id, projectStatus: project.status }}>
+  // Kopiowanie metapromptu
+  var copyBtn = document.getElementById('copy-btn');
+  var metaEl = document.getElementById('metaprompt');
+  var feedback = document.getElementById('copy-feedback');
+
+  if (copyBtn && metaEl) {
+    copyBtn.addEventListener('click', function() {
+      try {
+        navigator.clipboard.writeText(metaEl.value).then(function() {
+          if (feedback) { feedback.style.display = 'block'; }
+          copyBtn.textContent = 'Skopiowano!';
+          setTimeout(function() {
+            copyBtn.textContent = 'Kopiuj metaprompt';
+            if (feedback) { feedback.style.display = 'none'; }
+          }, 2500);
+        });
+      } catch (err) {
+        metaEl.select();
+        document.execCommand('copy');
+      }
+    });
+  }
+
+  // Wzbogacanie (raw → enriching → ready)
+  function runEnrich() {
+    var btn = document.getElementById('enrich-btn');
+    var reBtn = document.getElementById('re-enrich-btn');
+    var statusEl = document.getElementById('enrich-status');
+    var activeBtn = btn || reBtn;
+
+    if (activeBtn) { activeBtn.disabled = true; activeBtn.textContent = 'Generuję...'; }
+    if (statusEl) { statusEl.style.display = 'block'; }
+
+    fetch('/api/intake-enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intakeId: projectId }),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+        if (activeBtn) { activeBtn.disabled = false; activeBtn.textContent = 'Spróbuj ponownie'; }
+      }
+    })
+    .catch(function() {
+      alert('Błąd połączenia');
+      if (activeBtn) { activeBtn.disabled = false; }
+    });
+  }
+
+  var enrichBtn = document.getElementById('enrich-btn');
+  var reEnrichBtn = document.getElementById('re-enrich-btn');
+  if (enrichBtn) { enrichBtn.addEventListener('click', runEnrich); }
+  if (reEnrichBtn) { reEnrichBtn.addEventListener('click', runEnrich); }
+
+  // Polling jeśli status == enriching
+  if (projectStatus === 'enriching') {
+    var poll = setInterval(function() {
+      fetch(window.location.href)
+        .then(function(res) { return res.text(); })
+        .then(function(text) {
+          if (text.includes('pill-green') || text.includes('Gotowy')) {
+            clearInterval(poll);
+            window.location.reload();
+          }
+        })
+        .catch(function() {});
+    }, 4000);
+  }
+</script>

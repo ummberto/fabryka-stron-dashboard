@@ -1,0 +1,121 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createClientPost,
+  createSystemLog,
+  getClientById,
+  getClientPosts,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'create-post') {
+    const title = String(formData.get('title') ?? '');
+    const slug = String(formData.get('slug') ?? '');
+    const bodyMarkdown = String(formData.get('body_markdown') ?? '');
+
+    const post = await createClientPost({
+      client_id: clientId,
+      title,
+      slug,
+      body_markdown: bodyMarkdown,
+      status: 'draft',
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'client_post_created',
+      message: `Utworzono nowy wpis ${title}`,
+      payload_json: {
+        post_id: post.id,
+        slug,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/posts?created=1`);
+  }
+}
+
+const client = await getClientById(clientId);
+const posts = await getClientPosts(clientId);
+
+const url = new URL(Astro.request.url);
+const created = url.searchParams.get('created');
+---
+
+<AdminLayout title={`Posts Studio — ${client.company_name}`}>
+  <div class="card">
+    <h1>Posts Studio</h1>
+    <p class="muted">
+      Tworzenie i obsługa wpisów eksperckich klienta.
+    </p>
+
+    {created && <p><strong>Utworzono nowy wpis.</strong></p>}
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Nowy wpis</h2>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="create-post" />
+
+        <label class="label">
+          Tytuł
+          <input class="input" type="text" name="title" />
+        </label>
+
+        <label class="label">
+          Slug
+          <input class="input" type="text" name="slug" />
+        </label>
+
+        <label class="label">
+          Treść
+          <textarea class="textarea" name="body_markdown"></textarea>
+        </label>
+
+        <button class="btn" type="submit">Utwórz wpis</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Istniejące wpisy</h2>
+
+      {posts.length === 0 ? (
+        <p class="muted">Brak wpisów.</p>
+      ) : (
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Tytuł</th>
+              <th>Slug</th>
+              <th>Status</th>
+              <th>Akcja</th>
+            </tr>
+          </thead>
+          <tbody>
+            {posts.map((post) => (
+              <tr>
+                <td>{post.title}</td>
+                <td>{post.slug}</td>
+                <td><span class="pill">{post.status ?? '-'}</span></td>
+                <td>
+                  <a href={`/admin/posts/${post.id}`}>Otwórz wpis</a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </div>
+</AdminLayout>

@@ -1,0 +1,167 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getClientById,
+  getPreviewDiffForClient,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+const diff = await getPreviewDiffForClient(clientId);
+
+const readyCount =
+  diff.services.filter((item) => item.has_changes_ready).length +
+  diff.pages.filter((item) => item.has_changes_ready).length +
+  diff.locations.filter((item) => item.has_changes_ready).length +
+  diff.posts.filter((item) => item.has_changes_ready).length;
+---
+
+<AdminLayout title={`Preview Diff — ${client.company_name}`}>
+  <div class="card">
+  <h1>Preview Diff Center</h1>
+  <p class="muted">
+    Tutaj porównujesz live content z latest approved version przed preview lub publish.
+  </p>
+
+  <p>
+    <strong>Liczba elementów gotowych do preview/publish:</strong> {readyCount}
+  </p>
+</div>
+
+  <div class="card">
+    <h2>Usługi</h2>
+
+    {diff.services.length === 0 ? (
+      <p class="muted">Brak usług.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nazwa</th>
+            <th>Live</th>
+            <th>Approved</th>
+            <th>Zmiana gotowa?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.services.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{String(item.live_value).slice(0, 120) || '-'}</td>
+              <td>{String(item.approved_value).slice(0, 120) || '-'}</td>
+              <td>
+                <span class="pill">
+                  {item.has_changes_ready ? 'tak' : 'nie'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Strony</h2>
+
+    {diff.pages.length === 0 ? (
+      <p class="muted">Brak stron.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nazwa</th>
+            <th>Live</th>
+            <th>Approved</th>
+            <th>Zmiana gotowa?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.pages.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{String(item.live_value).slice(0, 120) || '-'}</td>
+              <td>{String(item.approved_value).slice(0, 120) || '-'}</td>
+              <td>
+                <span class="pill">
+                  {item.has_changes_ready ? 'tak' : 'nie'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Lokalizacje</h2>
+
+    {diff.locations.length === 0 ? (
+      <p class="muted">Brak lokalizacji.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Miasto</th>
+            <th>Live</th>
+            <th>Approved</th>
+            <th>Zmiana gotowa?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.locations.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{String(item.live_value).slice(0, 120) || '-'}</td>
+              <td>{String(item.approved_value).slice(0, 120) || '-'}</td>
+              <td>
+                <span class="pill">
+                  {item.has_changes_ready ? 'tak' : 'nie'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Wpisy</h2>
+
+    {diff.posts.length === 0 ? (
+      <p class="muted">Brak wpisów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tytuł</th>
+            <th>Live</th>
+            <th>Approved</th>
+            <th>Zmiana gotowa?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.posts.map((item) => (
+            <tr>
+              <td>{item.name}</td>
+              <td>{String(item.live_value).slice(0, 120) || '-'}</td>
+              <td>{String(item.approved_value).slice(0, 120) || '-'}</td>
+              <td>
+                <span class="pill">
+                  {item.has_changes_ready ? 'tak' : 'nie'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

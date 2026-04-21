@@ -1,0 +1,128 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createSystemLog,
+  generateAltSuggestion,
+  getAssetQaSummaryForClient,
+  getAssetsByClientId,
+  getClientById,
+  updateAssetRecord,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const client = await getClientById(clientId);
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'apply-alt-suggestion') {
+    const assetId = String(formData.get('asset_id') ?? '');
+    const suggestedAlt = String(formData.get('suggested_alt') ?? '');
+
+    await updateAssetRecord({
+      asset_id: assetId,
+      alt_text: suggestedAlt,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'asset_alt_generated',
+      message: 'Uzupełniono alt text dla assetu',
+      payload_json: {
+        asset_id: assetId,
+        alt_text: suggestedAlt,
+      },
+    });
+
+    return Astro.redirect(`/admin/clients/${clientId}/asset-qa?updated=1`);
+  }
+}
+
+const summary = await getAssetQaSummaryForClient(clientId);
+const assets = await getAssetsByClientId(clientId);
+
+const url = new URL(Astro.request.url);
+const updated = url.searchParams.get('updated');
+---
+
+<AdminLayout title={`Asset QA — ${client.company_name}`}>
+  <div class="card">
+    <h1>Asset QA</h1>
+    <p class="muted">
+      Kontrola jakości assetów przed publish.
+    </p>
+
+    {updated && <p><strong>Alt text został uzupełniony.</strong></p>}
+
+    <p><strong>Liczba assetów:</strong> {summary.totalAssets}</p>
+    <p><strong>Brakujące alty:</strong> {summary.missingAltCount}</p>
+    <p><strong>Czy jest logo:</strong> {summary.hasLogo ? 'tak' : 'nie'}</p>
+    <p><strong>Czy asset QA przechodzi:</strong> {summary.isAssetQaOk ? 'tak' : 'nie'}</p>
+  </div>
+
+  <div class="card">
+    <h2>Assety bez alt text</h2>
+
+    {summary.missingAltAssets.length === 0 ? (
+      <p class="muted">Brak assetów bez alt text.</p>
+    ) : (
+      summary.missingAltAssets.map((asset) => {
+        const suggestion = generateAltSuggestion({
+          title: asset.title,
+          type: asset.type,
+          storage_path: asset.storage_path,
+          client_name: client.company_name,
+        });
+
+        return (
+          <div style="border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px;">
+            <p><strong>Tytuł:</strong> {asset.title ?? '-'}</p>
+            <p><strong>Typ:</strong> {asset.type}</p>
+            <p><strong>Storage path:</strong> {asset.storage_path}</p>
+            <p><strong>Propozycja alt:</strong> {suggestion}</p>
+
+            <form method="POST" style="margin-top:16px;">
+              <input type="hidden" name="action" value="apply-alt-suggestion" />
+              <input type="hidden" name="asset_id" value={asset.id} />
+              <input type="hidden" name="suggested_alt" value={suggestion} />
+              <button class="btn" type="submit">Użyj tej propozycji</button>
+            </form>
+          </div>
+        );
+      })
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Wszystkie assety</h2>
+
+    {assets.length === 0 ? (
+      <p class="muted">Brak assetów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tytuł</th>
+            <th>Typ</th>
+            <th>Alt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map((asset) => (
+            <tr>
+              <td>{asset.title ?? '-'}</td>
+              <td>{asset.type}</td>
+              <td>{asset.alt_text ?? '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

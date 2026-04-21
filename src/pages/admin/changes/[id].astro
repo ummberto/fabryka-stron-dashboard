@@ -1,0 +1,56 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  getChangeRequestById,
+  getContentDiffsByRequestId,
+} from '../../../lib/client-data';
+
+const requestId = Astro.params.id;
+
+if (!requestId) {
+  throw new Error('Brak requestId');
+}
+
+const request = await getChangeRequestById(requestId);
+const diffs = await getContentDiffsByRequestId(requestId);
+---
+
+<AdminLayout title="Change request details">
+  <div class="card">
+    <h1>Szczegóły change request</h1>
+    <p><strong>Klient:</strong> {request.clients?.company_name ?? request.client_id}</p>
+    <p><strong>Typ:</strong> {request.request_type}</p>
+    <p><strong>Klasa:</strong> {request.change_class}</p>
+    <p><strong>Status:</strong> {request.status}</p>
+    <p><strong>Opis:</strong> {request.requested_text ?? '-'}</p>
+    <p><strong>Requires AI:</strong> {request.requires_ai ? 'tak' : 'nie'}</p>
+<p><strong>Requires preview:</strong> {request.requires_preview ? 'tak' : 'nie'}</p>
+<p><strong>Publish mode:</strong> {request.publish_mode ?? '-'}</p>
+  </div>
+
+  <div class="card">
+    <h2>Content diffs</h2>
+
+    {diffs.length === 0 ? (
+      <p class="muted">Brak diffów dla tego requestu.</p>
+    ) : (
+      diffs.map((diff) => (
+        <div style="border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px;">
+          <p><strong>Summary:</strong> {diff.diff_summary}</p>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <h3>Before</h3>
+              <pre style="white-space:pre-wrap;">{JSON.stringify(diff.before_json, null, 2)}</pre>
+            </div>
+
+            <div>
+              <h3>After</h3>
+              <pre style="white-space:pre-wrap;">{JSON.stringify(diff.after_json, null, 2)}</pre>
+            </div>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+</AdminLayout>

@@ -1,0 +1,90 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  createRollbackDeployment,
+  createSystemLog,
+  getDeploymentById,
+  getSnapshotById,
+} from '../../../lib/client-data';
+
+const deploymentId = Astro.params.id;
+
+if (!deploymentId) {
+  throw new Error('Brak deploymentId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'rollback') {
+    const clientId = String(formData.get('client_id') ?? '');
+    const snapshotId = String(formData.get('snapshot_id') ?? '');
+
+    const rollbackDeployment = await createRollbackDeployment({
+      client_id: clientId,
+      snapshot_id: snapshotId,
+      deploy_url: 'manual-rollback-url',
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'rollback_created',
+      message: 'Utworzono rollback deployment na podstawie wcześniejszego snapshotu',
+      payload_json: {
+        source_deployment_id: deploymentId,
+        rollback_deployment_id: rollbackDeployment.id,
+        snapshot_id: snapshotId,
+      },
+    });
+
+    return Astro.redirect(`/admin/deployments/${deploymentId}?rolled_back=1`);
+  }
+}
+
+const deployment = await getDeploymentById(deploymentId);
+const snapshot = deployment.snapshot_id
+  ? await getSnapshotById(deployment.snapshot_id)
+  : null;
+
+const url = new URL(Astro.request.url);
+const rolledBack = url.searchParams.get('rolled_back');
+---
+
+<AdminLayout title="Admin — Deployment details">
+  <div class="card">
+    <h1>Deployment details</h1>
+    <p><strong>Typ:</strong> {deployment.type}</p>
+    <p><strong>Status:</strong> {deployment.status}</p>
+    <p><strong>Client ID:</strong> {deployment.client_id}</p>
+    <p><strong>Snapshot ID:</strong> {deployment.snapshot_id ?? '-'}</p>
+    <p><strong>Deploy URL:</strong> {deployment.deploy_url ?? '-'}</p>
+
+    {rolledBack && <p><strong>Utworzono rollback deployment.</strong></p>}
+  </div>
+
+  <div class="card">
+    <h2>Akcje</h2>
+
+    {deployment.snapshot_id ? (
+      <form method="POST">
+        <input type="hidden" name="action" value="rollback" />
+        <input type="hidden" name="client_id" value={deployment.client_id} />
+        <input type="hidden" name="snapshot_id" value={deployment.snapshot_id} />
+        <button class="btn btn-secondary" type="submit">Rollback do tego snapshotu</button>
+      </form>
+    ) : (
+      <p class="muted">Ten deployment nie ma snapshotu, więc rollback nie jest możliwy.</p>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Snapshot JSON</h2>
+
+    {snapshot ? (
+      <pre style="white-space:pre-wrap;">{JSON.stringify(snapshot.snapshot_json, null, 2)}</pre>
+    ) : (
+      <p class="muted">Brak snapshotu.</p>
+    )}
+  </div>
+</AdminLayout>

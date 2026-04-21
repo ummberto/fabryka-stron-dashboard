@@ -1,0 +1,56 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { getPageById } from '../../../../lib/client-data';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+const pageId = Astro.params.id;
+
+if (!pageId) {
+  throw new Error('Brak pageId');
+}
+
+const page = await getPageById(pageId);
+
+const { data: diffs, error } = await supabaseAdmin
+  .from('content_diffs')
+  .select('*')
+  .order('created_at', { ascending: false })
+  .limit(20);
+
+if (error) {
+  throw new Error(`Błąd pobierania diffów: ${error.message}`);
+}
+---
+
+<AdminLayout title={`Diffs — ${page.slug}`}>
+  <div class="card">
+    <h1>Diffs dla strony {page.slug}</h1>
+    <p class="muted">
+      MVP widoku diffów. Na razie przegląd ostatnich diffów w systemie.
+    </p>
+  </div>
+
+  <div class="card">
+    {diffs.length === 0 ? (
+      <p class="muted">Brak diffów.</p>
+    ) : (
+      diffs.map((diff) => (
+        <div style="border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px;">
+          <p><strong>Summary:</strong> {diff.diff_summary}</p>
+          <p><strong>Data:</strong> {new Date(diff.created_at).toLocaleString('pl-PL')}</p>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <h3>Before</h3>
+              <pre style="white-space:pre-wrap;">{JSON.stringify(diff.before_json, null, 2)}</pre>
+            </div>
+            <div>
+              <h3>After</h3>
+              <pre style="white-space:pre-wrap;">{JSON.stringify(diff.after_json, null, 2)}</pre>
+            </div>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+</AdminLayout>

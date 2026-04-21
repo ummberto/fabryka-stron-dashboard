@@ -1,0 +1,118 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getAllFamilies, SECTION_CATALOG } from '../../lib/design-system';
+
+const families = getAllFamilies();
+---
+
+<AdminLayout title="Admin — Design Catalog">
+  <div class="card">
+    <h1>Design Catalog</h1>
+    <p class="muted">
+      Referencyjna baza wszystkich template families. Używaj jako przewodnik przy onboardingu nowego klienta
+      i przy decyzji o wyborze family.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Szybkie porównanie</h2>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>CTA</th>
+          <th>Rhythm</th>
+          <th>Radius</th>
+          <th>Motion</th>
+          <th>Imagery</th>
+          <th>Font</th>
+        </tr>
+      </thead>
+      <tbody>
+        {families.map((f) => (
+          <tr>
+            <td><strong>{f.label}</strong></td>
+            <td><span class="pill">{f.preset.cta_style}</span></td>
+            <td>{f.preset.section_rhythm}</td>
+            <td>{f.preset.radius_style}</td>
+            <td>{f.preset.motion_level}</td>
+            <td>{f.preset.imagery_style}</td>
+            <td style="font-size:0.82em;">{f.preset.font_pair}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  {families.map((family) => (
+    <div class="card" id={family.key}>
+      <h2>{family.label}</h2>
+      <p class="muted">{family.description}</p>
+      <p style="margin-top:8px;">
+        <strong>Branże:</strong> {family.example_industries.join(', ')}
+      </p>
+
+      <div class="grid-2" style="margin-top:16px;">
+        <div>
+          <h3 style="font-size:0.95em; margin-bottom:10px;">Preset wizualny</h3>
+          <table class="table">
+            <tbody>
+              <tr><td><strong>Font pair</strong></td><td>{family.preset.font_pair}</td></tr>
+              <tr><td><strong>CTA style</strong></td><td><span class="pill">{family.preset.cta_style}</span></td></tr>
+              <tr><td><strong>Section rhythm</strong></td><td>{family.preset.section_rhythm}</td></tr>
+              <tr><td><strong>Radius style</strong></td><td>{family.preset.radius_style}</td></tr>
+              <tr><td><strong>Motion level</strong></td><td>{family.preset.motion_level}</td></tr>
+              <tr><td><strong>Imagery style</strong></td><td>{family.preset.imagery_style}</td></tr>
+            </tbody>
+          </table>
+
+          <h3 style="font-size:0.95em; margin-top:16px; margin-bottom:8px;">Zalecane sekcje</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Sekcja</th><th>Wariant</th><th>Uwaga</th></tr>
+            </thead>
+            <tbody>
+              {family.sections.map((s) => (
+                <tr>
+                  <td>{s.section_key}</td>
+                  <td><span class="pill">{s.recommended_variant}</span></td>
+                  <td style="font-size:0.82em; color:#666;">{s.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3 style="font-size:0.95em; margin-bottom:8px; color:#2d6a2d;">Rób:</h3>
+          <ul style="font-size:0.88em; margin:0 0 16px 16px; line-height:1.7;">
+            {family.do.map((item) => <li>{item}</li>)}
+          </ul>
+
+          <h3 style="font-size:0.95em; margin-bottom:8px; color:#a33;">Nie rób:</h3>
+          <ul style="font-size:0.88em; margin:0 0 0 16px; line-height:1.7;">
+            {family.dont.map((item) => <li>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </div>
+  ))}
+
+  <div class="card">
+    <h2>Katalog sekcji</h2>
+    <p class="muted">Wszystkie dostępne sekcje i ich warianty. Warianty są kluczem do kontrolowanej unikalności.</p>
+
+    <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      {Object.entries(SECTION_CATALOG).map(([key, def]) => (
+        <div style="border:1px solid #e5e7eb; border-radius:6px; padding:14px;">
+          <p style="font-weight:600; margin-bottom:8px;">{def.label} <code style="font-size:0.8em; color:#888;">({key})</code></p>
+          {Object.entries(def.variants).map(([vk, vdesc]) => (
+            <div style="font-size:0.85em; margin-bottom:4px;">
+              <span class="pill">{vk}</span> {vdesc}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  </div>
+</AdminLayout>

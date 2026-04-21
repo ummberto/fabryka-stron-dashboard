@@ -1,0 +1,426 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  createDeployment,
+  createDeploymentSnapshot,
+  createIndexingEvent,
+  createSystemLog,
+  getAllClientServices,
+  getClientById,
+  getClientLocations,
+  getClientPages,
+  getClientSiteConfig,
+  getDeploymentsByClientId,
+  getDeploymentById,
+  getDesignProfileByClientId,
+  getPublishChecklistForClient,
+  getSectionVariantMapForClient,
+  getSnapshotById,
+  restoreClientDataFromSnapshot,
+  triggerVercelDeploy,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+const client = await getClientById(clientId);
+const siteConfig = await getClientSiteConfig(clientId);
+const services = await getAllClientServices(clientId);
+const pages = await getClientPages(clientId);
+const locations = await getClientLocations(clientId);
+const designProfile = await getDesignProfileByClientId(clientId);
+const sectionVariants = await getSectionVariantMapForClient(clientId);
+const deployments = await getDeploymentsByClientId(clientId);
+
+const snapshotJson = {
+  client,
+  siteConfig,
+  services,
+  pages,
+  locations,
+  designProfile,
+  sectionVariants,
+  created_at: new Date().toISOString(),
+};
+
+const checklist = await getPublishChecklistForClient(clientId);
+
+if (action === 'create-preview') {
+  if (!checklist.canPreview) {
+    return Astro.redirect(`/admin/clients/${clientId}/publish?blocked_preview=1`);
+  }
+
+  const snapshot = await createDeploymentSnapshot({
+    client_id: clientId,
+    template_version: siteConfig.template_version ?? 'v1',
+    snapshot_json: snapshotJson,
+  });
+
+  const deployment = await createDeployment({
+    client_id: clientId,
+    snapshot_id: snapshot.id,
+    type: 'preview',
+    status: 'queued',
+    deploy_url: null,
+  });
+
+  const triggerResponse = await fetch(new URL('/api/deploy-trigger', Astro.request.url), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      deploymentId: deployment.id,
+      clientId,
+      mode: 'preview',
+    }),
+  });
+
+  if (!triggerResponse.ok) {
+    return Astro.redirect(`/admin/clients/${clientId}/publish?trigger_failed=1`);
+  }
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'preview_created',
+    message: 'Utworzono preview snapshot i uruchomiono build preview',
+    payload_json: {
+      snapshot_id: snapshot.id,
+      deployment_id: deployment.id,
+    },
+  });
+
+  return Astro.redirect(`/admin/clients/${clientId}/publish?preview=1`);
+}
+
+if (action === 'publish-live') {
+  if (!checklist.canPublish) {
+    return Astro.redirect(`/admin/clients/${clientId}/publish?blocked_publish=1`);
+  }
+
+  const snapshot = await createDeploymentSnapshot({
+    client_id: clientId,
+    template_version: siteConfig.template_version ?? 'v1',
+    snapshot_json: snapshotJson,
+  });
+
+  const deployment = await createDeployment({
+    client_id: clientId,
+    snapshot_id: snapshot.id,
+    type: 'publish',
+    status: 'queued',
+    deploy_url: null,
+  });
+
+  const triggerResponse = await fetch(new URL('/api/deploy-trigger', Astro.request.url), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      deploymentId: deployment.id,
+      clientId,
+      mode: 'publish',
+    }),
+  });
+
+  if (!triggerResponse.ok) {
+    return Astro.redirect(`/admin/clients/${clientId}/publish?trigger_failed=1`);
+  }
+
+  const baseDomain = siteConfig.domain?.trim()
+    ? `https://${siteConfig.domain.trim()}`
+    : '';
+
+  if (baseDomain) {
+    await createIndexingEvent({
+      deployment_id: deployment.id,
+      url: `${baseDomain}/`,
+      status: 'queued',
+      response: {
+        source: 'publish_flow',
+        page_type: 'home',
+      },
+    });
+
+    for (const page of pages) {
+      if (page.slug && page.slug !== 'home') {
+        await createIndexingEvent({
+          deployment_id: deployment.id,
+          url: `${baseDomain}/${page.slug}`,
+          status: 'queued',
+          response: {
+            source: 'publish_flow',
+            page_type: 'page',
+            slug: page.slug,
+          },
+        });
+      }
+    }
+
+    for (const location of locations) {
+      if (location.slug) {
+        await createIndexingEvent({
+          deployment_id: deployment.id,
+          url: `${baseDomain}/lokalizacje/${location.slug}`,
+          status: 'queued',
+          response: {
+            source: 'publish_flow',
+            page_type: 'location',
+            slug: location.slug,
+          },
+        });
+      }
+    }
+
+    for (const service of services) {
+      if (service.slug) {
+        await createIndexingEvent({
+          deployment_id: deployment.id,
+          url: `${baseDomain}/uslugi/${service.slug}`,
+          status: 'queued',
+          response: {
+            source: 'publish_flow',
+            page_type: 'service',
+            slug: service.slug,
+          },
+        });
+      }
+    }
+  }
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'publish_completed',
+    message: 'Utworzono snapshot, uruchomiono build publish i zapisano indexing events',
+    payload_json: {
+      snapshot_id: snapshot.id,
+      deployment_id: deployment.id,
+      has_domain: !!baseDomain,
+    },
+  });
+
+  return Astro.redirect(`/admin/clients/${clientId}/publish?published=1`);
+}
+
+if (action === 'rollback-to-snapshot') {
+  const deploymentId = String(formData.get('deployment_id') ?? '');
+
+  if (!deploymentId) {
+    return Astro.redirect(`/admin/clients/${clientId}/publish?rollback_failed=1`);
+  }
+
+  const targetDeployment = await getDeploymentById(deploymentId);
+  const snapshot = await getSnapshotById(targetDeployment.snapshot_id);
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'rollback_restore_started',
+    message: `Rozpoczęto rollback do snapshotu ${snapshot.id}`,
+    payload_json: { snapshot_id: snapshot.id, deployment_id: deploymentId },
+  });
+
+  await restoreClientDataFromSnapshot({
+    client_id: clientId,
+    snapshot_json: snapshot.snapshot_json,
+  });
+
+  // Pobierz odtworzony stan i utwórz nowy snapshot rollback
+  const [restoredSiteConfig, restoredServices, restoredPages, restoredLocations,
+         restoredDesignProfile, restoredSectionVariants] = await Promise.all([
+    getClientSiteConfig(clientId),
+    getAllClientServices(clientId),
+    getClientPages(clientId),
+    getClientLocations(clientId),
+    getDesignProfileByClientId(clientId),
+    getSectionVariantMapForClient(clientId),
+  ]);
+
+  const rollbackClientData = await getClientById(clientId);
+
+  const rollbackSnapshotJson = {
+    client: rollbackClientData,
+    siteConfig: restoredSiteConfig,
+    services: restoredServices,
+    pages: restoredPages,
+    locations: restoredLocations,
+    designProfile: restoredDesignProfile,
+    sectionVariants: restoredSectionVariants,
+    rollback_source_snapshot_id: snapshot.id,
+    created_at: new Date().toISOString(),
+  };
+
+  const rollbackSnapshot = await createDeploymentSnapshot({
+    client_id: clientId,
+    template_version: restoredSiteConfig.template_version ?? 'v1',
+    snapshot_json: rollbackSnapshotJson,
+  });
+
+  const rollbackDeployment = await createDeployment({
+    client_id: clientId,
+    snapshot_id: rollbackSnapshot.id,
+    type: 'rollback',
+    status: 'queued',
+    deploy_url: null,
+  });
+
+  const triggerResult = await triggerVercelDeploy({
+    mode: 'publish',
+    deploymentId: rollbackDeployment.id,
+    clientId,
+  });
+
+  if (!triggerResult.ok) {
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'rollback_trigger_failed',
+      message: 'Rollback nie udał się — trigger Vercel zwrócił błąd',
+      payload_json: {
+        snapshot_id: snapshot.id,
+        deployment_id: rollbackDeployment.id,
+        vercel_status: triggerResult.status,
+      },
+    });
+    return Astro.redirect(`/admin/clients/${clientId}/publish?rollback_failed=1`);
+  }
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'rollback_completed',
+    message: `Rollback zakończony — dane przywrócone ze snapshotu ${snapshot.id}, deploy uruchomiony`,
+    payload_json: {
+      source_snapshot_id: snapshot.id,
+      rollback_snapshot_id: rollbackSnapshot.id,
+      rollback_deployment_id: rollbackDeployment.id,
+    },
+  });
+
+  return Astro.redirect(`/admin/clients/${clientId}/publish?rolledback=1`);
+}
+}
+
+const client = await getClientById(clientId);
+const siteConfig = await getClientSiteConfig(clientId);
+const services = await getAllClientServices(clientId);
+const pages = await getClientPages(clientId);
+const locations = await getClientLocations(clientId);
+const deployments = await getDeploymentsByClientId(clientId);
+const designProfile = await getDesignProfileByClientId(clientId);
+const sectionVariants = await getSectionVariantMapForClient(clientId);
+
+const url = new URL(Astro.request.url);
+const preview = url.searchParams.get('preview');
+const published = url.searchParams.get('published');
+const blockedPreview = url.searchParams.get('blocked_preview');
+const blockedPublish = url.searchParams.get('blocked_publish');
+const triggerFailed = url.searchParams.get('trigger_failed');
+const rolledBack = url.searchParams.get('rolledback');
+const rollbackFailed = url.searchParams.get('rollback_failed');
+---
+
+<AdminLayout title={`Publish Center — ${client.company_name}`}>
+ <div class="card">
+  <h1>Preview & Publish</h1>
+  <p class="muted">
+    MVP publikacji oparty o snapshoty i wpisy w deployments.
+  </p>
+
+  {preview && <p><strong>Utworzono preview deployment.</strong></p>}
+{published && <p><strong>Opublikowano wersję live.</strong></p>}
+{blockedPreview && <p><strong>Preview zablokowany — checklista nie przeszła.</strong></p>}
+{blockedPublish && <p><strong>Publish zablokowany — checklista nie przeszła.</strong></p>}
+{triggerFailed && <p><strong>Trigger deployu nie udał się — sprawdź envy i hook Vercela.</strong></p>}
+{rolledBack && <p><strong>Rollback zakończony — dane przywrócone, deploy uruchomiony.</strong></p>}
+{rollbackFailed && <p><strong>Rollback nie udał się — sprawdź logi klienta.</strong></p>}
+  <p style="margin-top:16px;">
+    <a href={`/admin/clients/${clientId}/preview-diff`}>Najpierw sprawdź Preview Diff Center</a>
+  </p>
+  <p style="margin-top:8px;">
+  <a href={`/admin/clients/${clientId}/publish-checklist`}>Sprawdź Publish Checklist</a>
+</p>
+</div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Aktualny snapshot input</h2>
+      <p><strong>Klient:</strong> {client.company_name}</p>
+      <p><strong>Template version:</strong> {siteConfig.template_version ?? '-'}</p>
+     <p><strong>Liczba usług:</strong> {services.length}</p>
+<p><strong>Liczba stron:</strong> {pages.length}</p>
+<p><strong>Liczba lokalizacji:</strong> {locations.length}</p>
+<p><strong>Template family:</strong> {designProfile?.template_family ?? '-'}</p>
+<p><strong>CTA style:</strong> {designProfile?.cta_style ?? '-'}</p>
+<p><strong>Liczba route z wariantami sekcji:</strong> {Object.keys(sectionVariants).length}</p>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:20px;">
+        <form method="POST">
+          <input type="hidden" name="action" value="create-preview" />
+          <button class="btn" type="submit">Utwórz preview</button>
+        </form>
+
+        <form method="POST">
+          <input type="hidden" name="action" value="publish-live" />
+          <button class="btn btn-secondary" type="submit">Publish live</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Zasada operacyjna</h2>
+      <p class="muted">
+        Snapshot ma zawierać pełny zestaw danych wejściowych potrzebnych do publikacji:
+        config, usługi, strony i lokalizacje.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Historia deployments</h2>
+
+    {deployments.length === 0 ? (
+      <p class="muted">Brak deploymentów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Typ</th>
+            <th>Status</th>
+            <th>URL</th>
+            <th>Data</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deployments.map((item) => (
+            <tr>
+              <td>{item.type}</td>
+              <td><span class="pill">{item.status}</span></td>
+              <td>{item.deploy_url ?? '-'}</td>
+              <td>{new Date(item.created_at).toLocaleString('pl-PL')}</td>
+              <td>
+                {(item.type === 'publish' || item.type === 'rollback') && item.snapshot_id ? (
+                  <form method="POST">
+                    <input type="hidden" name="action" value="rollback-to-snapshot" />
+                    <input type="hidden" name="deployment_id" value={item.id} />
+                    <button class="btn btn-secondary" type="submit">
+                      Rollback
+                    </button>
+                  </form>
+                ) : (
+                  <span class="muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

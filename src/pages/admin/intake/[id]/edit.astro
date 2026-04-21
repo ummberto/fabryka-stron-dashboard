@@ -1,0 +1,481 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { storeGetById, storeUpdate } from '../../../../lib/intake-store';
+
+const { id } = Astro.params;
+if (!id) throw new Error('Brak id');
+
+let error: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  try {
+    const fd = await Astro.request.formData();
+
+    const companyName = String(fd.get('company_name') ?? '').trim();
+    if (!companyName) throw new Error('Nazwa firmy jest wymagana.');
+
+    const extraOffers: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const val = String(fd.get(`extra_offer_${i}`) ?? '').trim();
+      if (val) extraOffers.push(val);
+    }
+
+    const serviceAreaRaw = String(fd.get('service_area') ?? '');
+    const serviceArea = serviceAreaRaw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const benefitsRaw = String(fd.get('benefits') ?? '');
+    const benefits = benefitsRaw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    storeUpdate(id, {
+      company_name: companyName,
+      industry: String(fd.get('industry') ?? '').trim() || null,
+      main_offer: String(fd.get('main_offer') ?? '').trim() || null,
+      extra_offers: extraOffers.length > 0 ? extraOffers : null,
+      main_location: String(fd.get('main_location') ?? '').trim() || null,
+      service_area: serviceArea.length > 0 ? serviceArea : null,
+      target_audience: String(fd.get('target_audience') ?? '').trim() || null,
+      benefits: benefits.length > 0 ? benefits : null,
+      tone_of_voice: String(fd.get('tone_of_voice') ?? '').trim() || null,
+      website_goal: String(fd.get('website_goal') ?? '').trim() || null,
+      phone: String(fd.get('phone') ?? '').trim() || null,
+      email: String(fd.get('email') ?? '').trim() || null,
+      has_blog: fd.get('has_blog') === 'on',
+      has_faq: fd.get('has_faq') === 'on',
+      has_reviews: fd.get('has_reviews') === 'on',
+      has_case_studies: fd.get('has_case_studies') === 'on',
+      site_type_preference: String(fd.get('site_type_preference') ?? '').trim() || null,
+      competitors: String(fd.get('competitors') ?? '').trim() || null,
+      current_url: String(fd.get('current_url') ?? '').trim() || null,
+      manual_keywords: String(fd.get('manual_keywords') ?? '').trim() || null,
+      target_stack: String(fd.get('target_stack') ?? 'Next.js + Tailwind CSS'),
+      has_location_pages: String(fd.get('has_location_pages') ?? '').trim() || null,
+      // reset enrichment — dane się zmieniły
+      status: 'raw',
+      enrichment_json: null,
+      metaprompt: null,
+    });
+
+    return Astro.redirect(`/admin/intake/${id}`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Nieznany błąd';
+  }
+}
+
+const project = storeGetById(id);
+const extraOffersList = project.extra_offers ?? [];
+const serviceAreaStr = (project.service_area ?? []).join(', ');
+const benefitsStr = (project.benefits ?? []).join('\n');
+---
+
+<AdminLayout title={`Edytuj — ${project.company_name}`}>
+  <div class="card">
+    <h1>Edytuj brief: {project.company_name}</h1>
+    <p class="muted">
+      Po zapisaniu status zostanie zresetowany do "Oczekuje" i będziesz mógł wygenerować nowy metaprompt.
+    </p>
+    <p style="margin-top:8px;"><a href={`/admin/intake/${id}`}>← Wróć bez zapisywania</a></p>
+    {error && <p class="alert alert-danger" style="margin-top:12px;">{error}</p>}
+  </div>
+
+  <form method="POST">
+
+    <!-- SEKCJA 1: Firma -->
+    <div class="card">
+      <h2>1. Firma</h2>
+
+      <label class="label">
+        Nazwa firmy <span style="color:var(--sb-red)">*</span>
+        <input class="input" type="text" name="company_name" value={project.company_name} required />
+      </label>
+
+      <label class="label">
+        Branża
+        <input class="input" type="text" name="industry" value={project.industry ?? ''} />
+      </label>
+
+      <div class="grid-2">
+        <label class="label">
+          Telefon
+          <input class="input" type="text" name="phone" value={project.phone ?? ''} />
+        </label>
+        <label class="label">
+          E-mail
+          <input class="input" type="email" name="email" value={project.email ?? ''} />
+        </label>
+      </div>
+
+      <label class="label">
+        Aktualna strona www
+        <input class="input" type="text" name="current_url" value={project.current_url ?? ''} />
+      </label>
+    </div>
+
+    <!-- SEKCJA 2: Oferta -->
+    <div class="card">
+      <h2>2. Oferta</h2>
+
+      <label class="label">
+        Główna usługa / oferta
+        <input class="input" type="text" name="main_offer" value={project.main_offer ?? ''} />
+      </label>
+
+      <div>
+        <p class="label" style="margin-bottom:8px;">Dodatkowe usługi</p>
+        <div id="extra-offers-list">
+          {extraOffersList.length > 0 ? (
+            extraOffersList.map((offer, i) => (
+              <div class="extra-offer-row" style="display:flex;gap:8px;margin-bottom:6px;">
+                <input class="input" type="text" name={`extra_offer_${i}`} value={offer} style="flex:1;" />
+                <button type="button" class="btn btn-ghost" onclick="this.parentElement.remove()">x</button>
+              </div>
+            ))
+          ) : (
+            <div class="extra-offer-row" style="display:flex;gap:8px;margin-bottom:6px;">
+              <input class="input" type="text" name="extra_offer_0" placeholder="np. udrażnianie rur" style="flex:1;" />
+            </div>
+          )}
+        </div>
+        <button type="button" class="btn btn-ghost" style="margin-top:4px;" onclick="addExtraOffer()">+ Dodaj usługę</button>
+      </div>
+    </div>
+
+    <!-- SEKCJA 3: Lokalizacja -->
+    <div class="card">
+      <h2>3. Lokalizacja</h2>
+
+      <label class="label">
+        Lokalizacja główna
+        <input class="input" type="text" name="main_location" value={project.main_location ?? ''} />
+      </label>
+
+      <label class="label">
+        Obszar działania (oddziel przecinkami lub enterami)
+        <textarea class="textarea" name="service_area" rows="3" id="service_area">{serviceAreaStr}</textarea>
+      </label>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button type="button" id="suggest-cities-btn" class="btn btn-ghost" style="font-size:0.85em;">
+          Sugeruj okoliczne →
+        </button>
+        <span id="cities-loading" style="display:none; font-size:0.85em; color:var(--sb-text-3);">
+          Szukam miast...
+        </span>
+      </div>
+      <div id="city-suggestions" style="display:none; margin-top:10px; padding:12px;
+           background:var(--sb-surface); border:1px solid var(--sb-border); border-radius:6px;">
+        <p style="font-size:0.8em; color:var(--sb-text-3); margin-bottom:8px;">
+          Kliknij miasto aby dodać do obszaru działania:
+        </p>
+        <div id="city-chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 4: Strategia -->
+    <div class="card">
+      <h2>4. Strategia</h2>
+
+      <label class="label">
+        Cel strony
+        <select class="select" name="website_goal">
+          {[
+            ['pozyskiwanie leadów telefonicznych i z formularza', 'Leady (telefon + formularz)'],
+            ['sprzedaż online', 'Sprzedaż online'],
+            ['budowanie wizerunku eksperta', 'Wizerunek eksperta'],
+            ['lokalny SEO i widoczność w Google', 'Lokalny SEO / widoczność'],
+            ['prezentacja oferty i kontakt', 'Prezentacja oferty'],
+          ].map(([val, label]) => (
+            <option value={val} selected={project.website_goal === val}>{label}</option>
+          ))}
+        </select>
+      </label>
+
+      <label class="label">
+        Przewagi firmy (każda w osobnej linii)
+        <textarea class="textarea" name="benefits" rows="4">{benefitsStr}</textarea>
+      </label>
+
+      <label class="label">
+        Grupa docelowa
+        <input class="input" type="text" name="target_audience" value={project.target_audience ?? ''} />
+      </label>
+
+      <label class="label">
+        Ton komunikacji
+        <select class="select" name="tone_of_voice">
+          {[
+            ['profesjonalny, konkretny, zaufany', 'Profesjonalny i konkretny'],
+            ['ciepły, przyjazny, pomocny', 'Ciepły i pomocny'],
+            ['ekspercki, techniczny, precyzyjny', 'Ekspercki i techniczny'],
+            ['energiczny, dynamiczny, nowoczesny', 'Energiczny i nowoczesny'],
+            ['luksusowy, premium, ekskluzywny', 'Premium i ekskluzywny'],
+          ].map(([val, label]) => (
+            <option value={val} selected={project.tone_of_voice === val}>{label}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+
+    <!-- SEKCJA 5: Opcje strony -->
+    <div class="card">
+      <h2>5. Opcje strony</h2>
+
+      <div class="grid-2">
+        <div>
+          <label class="label">
+            Typ strony
+            <select class="select" name="site_type_preference">
+              {[
+                ['', 'Dopasuj automatycznie'],
+                ['landing page', 'Landing page (1 strona)'],
+                ['strona firmowa 5-7 podstron', 'Strona firmowa (5-7 podstron)'],
+                ['lokalna strona usługowa z podstronami lokalizacji', 'Lokalna SEO (podstrony lokalizacji)'],
+                ['strona ekspercka / personal brand', 'Ekspert / personal brand'],
+                ['one-page', 'One-page scroll'],
+              ].map(([val, label]) => (
+                <option value={val} selected={project.site_type_preference === val}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label class="label" style="margin-top:16px;">
+            Stack techniczny
+            <select class="select" name="target_stack">
+              {[
+                ['Next.js + Tailwind CSS', 'Next.js + Tailwind CSS'],
+                ['Astro + Tailwind CSS', 'Astro + Tailwind CSS'],
+                ['HTML + CSS + Alpine.js', 'HTML + CSS + Alpine.js'],
+                ['Vue 3 + Nuxt + Tailwind CSS', 'Vue 3 / Nuxt + Tailwind CSS'],
+              ].map(([val, label]) => (
+                <option value={val} selected={project.target_stack === val}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label class="label" style="margin-top:16px;">
+            Generuj podstrony dynamiczne
+            <select class="select" name="has_location_pages">
+              {[
+                ['', 'Nie — tylko strony z briefu'],
+                ['lokalizacje', 'Podstrony lokalizacji (np. /uslugi-warszawa)'],
+                ['uslugi', 'Podstrony usług (np. /naprawa-komputerow)'],
+                ['lokalizacje-i-uslugi', 'Lokalizacja x usługa (np. /naprawa-krakow)'],
+              ].map(([val, label]) => (
+                <option value={val} selected={(project.has_location_pages ?? '') === val}>{label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div>
+          <p class="label" style="margin-bottom:10px;">Elementy strony</p>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_faq" checked={project.has_faq} />
+            <span>Sekcja FAQ</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_reviews" checked={project.has_reviews} />
+            <span>Opinie / referencje</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" name="has_blog" checked={project.has_blog} />
+            <span>Blog</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" name="has_case_studies" checked={project.has_case_studies} />
+            <span>Case studies / realizacje</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 6: Opcjonalne -->
+    <div class="card">
+      <h2>6. Opcjonalne</h2>
+
+      <label class="label">
+        Konkurenci (URL-e lub nazwy)
+        <input class="input" type="text" name="competitors" value={project.competitors ?? ''} />
+      </label>
+
+      <label class="label">
+        Słowa kluczowe podane ręcznie
+        <input class="input" type="text" name="manual_keywords" id="manual_keywords"
+          value={project.manual_keywords ?? ''} placeholder="np. serwis komputerowy, naprawa laptopów" />
+      </label>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button type="button" id="suggest-keywords-btn" class="btn btn-ghost" style="font-size:0.85em;">
+          Sugeruj słowa kluczowe →
+        </button>
+        <span id="keywords-loading" style="display:none; font-size:0.85em; color:var(--sb-text-3);">
+          Generuję frazy...
+        </span>
+      </div>
+      <div id="keyword-suggestions" style="display:none; margin-top:10px; padding:12px;
+           background:var(--sb-surface); border:1px solid var(--sb-border); border-radius:6px;">
+        <p style="font-size:0.8em; color:var(--sb-text-3); margin-bottom:8px;">
+          Kliknij frazę aby dodać do słów kluczowych:
+        </p>
+        <div id="keyword-chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="display:flex;gap:12px;">
+      <button class="btn" type="submit">Zapisz i resetuj →</button>
+      <a class="btn btn-ghost" href={`/admin/intake/${id}`}>Anuluj</a>
+    </div>
+
+  </form>
+</AdminLayout>
+
+<script is:inline define:vars={{ initialExtraCount: Math.max(extraOffersList.length, 1) }}>
+  var extraCount = initialExtraCount;
+
+  function addExtraOffer() {
+    if (extraCount >= 9) return;
+    var list = document.getElementById('extra-offers-list');
+    var row = document.createElement('div');
+    row.className = 'extra-offer-row';
+    row.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
+    row.innerHTML = '<input class="input" type="text" name="extra_offer_' + extraCount + '" placeholder="usługa dodatkowa" style="flex:1;" />'
+      + '<button type="button" class="btn btn-ghost" onclick="this.parentElement.remove()">x</button>';
+    list.appendChild(row);
+    extraCount++;
+  }
+
+  window.addExtraOffer = addExtraOffer;
+
+  // ─── Sugestie miast ─────────────────────────────────────────────────────────
+
+  function getExtraOfferValues() {
+    var results = [];
+    for (var i = 0; i < 10; i++) {
+      var el = document.querySelector('[name="extra_offer_' + i + '"]');
+      if (el && el.value.trim()) results.push(el.value.trim());
+    }
+    return results;
+  }
+
+  function renderChips(containerId, items, onClickFn) {
+    var container = document.getElementById(containerId);
+    container.innerHTML = '';
+    items.forEach(function(item) {
+      var chip = document.createElement('span');
+      chip.textContent = item;
+      chip.style.cssText = 'cursor:pointer; padding:4px 10px; border-radius:20px; font-size:0.82em;'
+        + ' background:var(--sb-surface-2,#222); border:1px solid var(--sb-border); color:var(--sb-text-1);'
+        + ' transition:background 0.15s;';
+      chip.title = 'Kliknij aby dodac';
+      chip.addEventListener('mouseenter', function() {
+        chip.style.background = 'var(--sb-green, #22c55e)';
+        chip.style.color = '#000';
+        chip.style.borderColor = 'var(--sb-green, #22c55e)';
+      });
+      chip.addEventListener('mouseleave', function() {
+        chip.style.background = 'var(--sb-surface-2,#222)';
+        chip.style.color = 'var(--sb-text-1)';
+        chip.style.borderColor = 'var(--sb-border)';
+      });
+      chip.addEventListener('click', function() { onClickFn(item, chip); });
+      container.appendChild(chip);
+    });
+  }
+
+  function addCityToArea(city, chip) {
+    var ta = document.getElementById('service_area');
+    var current = ta.value.trim();
+    var cities = current ? current.split(/[\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    if (cities.indexOf(city) === -1) {
+      cities.push(city);
+      ta.value = cities.join(', ');
+    }
+    chip.style.opacity = '0.4';
+    chip.style.pointerEvents = 'none';
+  }
+
+  function addKeyword(kw, chip) {
+    var input = document.getElementById('manual_keywords');
+    var current = input.value.trim();
+    var existing = current ? current.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    if (existing.indexOf(kw) === -1) {
+      existing.push(kw);
+      input.value = existing.join(', ');
+    }
+    chip.style.opacity = '0.4';
+    chip.style.pointerEvents = 'none';
+  }
+
+  document.getElementById('suggest-cities-btn').addEventListener('click', function() {
+    var location = document.querySelector('[name="main_location"]').value.trim();
+    if (!location) { alert('Wypelnij najpierw pole "Lokalizacja glowna"'); return; }
+
+    var btn = document.getElementById('suggest-cities-btn');
+    var loading = document.getElementById('cities-loading');
+    var box = document.getElementById('city-suggestions');
+    btn.disabled = true;
+    btn.textContent = 'Szukam...';
+    loading.style.display = 'inline';
+
+    var serviceArea = document.getElementById('service_area').value.trim();
+    fetch('/api/intake-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'cities', location: location, service_area: serviceArea }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.textContent = 'Sugeruj okoliczne →';
+      loading.style.display = 'none';
+      if (!data.ok) { alert('Blad: ' + data.error); return; }
+      box.style.display = 'block';
+      renderChips('city-chips', data.suggestions, addCityToArea);
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Sugeruj okoliczne →';
+      loading.style.display = 'none';
+      alert('Blad polaczenia');
+    });
+  });
+
+  document.getElementById('suggest-keywords-btn').addEventListener('click', function() {
+    var mainOffer = document.querySelector('[name="main_offer"]').value.trim();
+    var extras = getExtraOfferValues();
+    var location = document.querySelector('[name="main_location"]').value.trim();
+    var services = [mainOffer].concat(extras).filter(Boolean);
+    if (services.length === 0) { alert('Wypelnij najpierw pole "Glowna usluga"'); return; }
+
+    var btn = document.getElementById('suggest-keywords-btn');
+    var loading = document.getElementById('keywords-loading');
+    var box = document.getElementById('keyword-suggestions');
+    btn.disabled = true;
+    btn.textContent = 'Generuje...';
+    loading.style.display = 'inline';
+
+    fetch('/api/intake-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'keywords', location: location, services: services }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.textContent = 'Sugeruj slowa kluczowe →';
+      loading.style.display = 'none';
+      if (!data.ok) { alert('Blad: ' + data.error); return; }
+      box.style.display = 'block';
+      renderChips('keyword-chips', data.suggestions, addKeyword);
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Sugeruj slowa kluczowe →';
+      loading.style.display = 'none';
+      alert('Blad polaczenia');
+    });
+  });
+</script>

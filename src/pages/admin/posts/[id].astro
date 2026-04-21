@@ -1,0 +1,203 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  createPostDraftVersion,
+  createSystemLog,
+  getPostById,
+  getPostVersions,
+  publishPostVersionToBase,
+  saveContentDiff,
+  updatePostVersionStatus,
+} from '../../../lib/client-data';
+
+const postId = Astro.params.id;
+
+if (!postId) {
+  throw new Error('Brak postId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'create-post-draft') {
+    const clientId = String(formData.get('client_id') ?? '');
+    const postTitle = String(formData.get('post_title') ?? '');
+    const oldBody = String(formData.get('old_body') ?? '');
+    const newBody = String(formData.get('body_markdown') ?? '');
+
+    const version = await createPostDraftVersion({
+      post_id: postId,
+      body_markdown: newBody,
+      metadata: {
+        post_title: postTitle,
+      },
+      source: 'operator_panel',
+    });
+
+    await saveContentDiff({
+      before_json: {
+        body_markdown: oldBody,
+      },
+      after_json: {
+        body_markdown: newBody,
+      },
+      diff_summary: `Utworzono draft wersji wpisu ${postTitle}`,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'post_draft_created',
+      message: `Utworzono draft version v${version.version_no} dla wpisu ${postTitle}`,
+      payload_json: {
+        post_id: postId,
+        version_id: version.id,
+      },
+    });
+
+    return Astro.redirect(`/admin/posts/${postId}?draft_created=1`);
+  }
+
+  if (action === 'approve-post-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+
+    const version = await updatePostVersionStatus(versionId, 'approved');
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'post_version_approved',
+      message: `Zatwierdzono post version v${version.version_no}`,
+      payload_json: {
+        version_id: versionId,
+      },
+    });
+
+    return Astro.redirect(`/admin/posts/${postId}?approved=1`);
+  }
+
+  if (action === 'publish-post-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+    const postBaseId = String(formData.get('post_base_id') ?? '');
+
+    const versions = await getPostVersions(postId);
+    const selectedVersion = versions.find((v) => v.id === versionId);
+
+    if (!selectedVersion) {
+      throw new Error('Nie znaleziono wybranej wersji wpisu');
+    }
+
+    await publishPostVersionToBase(postBaseId, selectedVersion.body_markdown ?? '');
+    const version = await updatePostVersionStatus(versionId, 'published');
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'post_version_published',
+      message: `Opublikowano post version v${version.version_no}`,
+      payload_json: {
+        version_id: versionId,
+        post_id: postBaseId,
+      },
+    });
+
+    return Astro.redirect(`/admin/posts/${postId}?published=1`);
+  }
+}
+
+const post = await getPostById(postId);
+const versions = await getPostVersions(postId);
+
+const url = new URL(Astro.request.url);
+const draftCreated = url.searchParams.get('draft_created');
+const approved = url.searchParams.get('approved');
+const published = url.searchParams.get('published');
+---
+
+<AdminLayout title={`Admin — wpis ${post.title}`}>
+  <div class="card">
+    <h1>Wpis: {post.title}</h1>
+    <p class="muted">Content Loop MVP dla wpisów eksperckich.</p>
+
+    {draftCreated && <p><strong>Utworzono draft wersji wpisu.</strong></p>}
+    {approved && <p><strong>Zatwierdzono wersję wpisu.</strong></p>}
+    {published && <p><strong>Opublikowano wersję wpisu.</strong></p>}
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Aktualny rekord bazowy</h2>
+      <p><strong>Tytuł:</strong> {post.title}</p>
+      <p><strong>Slug:</strong> {post.slug}</p>
+      <pre style="white-space:pre-wrap;">{post.body_markdown ?? '-'}</pre>
+    </div>
+
+    <div class="card">
+      <h2>Utwórz draft version</h2>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="create-post-draft" />
+        <input type="hidden" name="client_id" value={post.client_id} />
+        <input type="hidden" name="post_title" value={post.title} />
+        <input type="hidden" name="old_body" value={post.body_markdown ?? ''} />
+
+        <label class="label">
+          Nowa treść wpisu
+          <textarea class="textarea" name="body_markdown">{post.body_markdown ?? ''}</textarea>
+        </label>
+
+        <button class="btn" type="submit">Utwórz draft</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Wersje wpisu</h2>
+
+    {versions.length === 0 ? (
+      <p class="muted">Brak wersji wpisu.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Treść</th>
+            <th>Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {versions.map((version) => (
+            <tr>
+              <td>v{version.version_no}</td>
+              <td><span class="pill">{version.status}</span></td>
+              <td>{version.body_markdown?.slice(0, 160) ?? '-'}</td>
+              <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  {version.status === 'draft' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="approve-post-version" />
+                      <input type="hidden" name="version_id" value={version.id} />
+                      <input type="hidden" name="client_id" value={post.client_id} />
+                      <button class="btn" type="submit">Approve</button>
+                    </form>
+                  )}
+
+                  {version.status === 'approved' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="publish-post-version" />
+                      <input type="hidden" name="version_id" value={version.id} />
+                      <input type="hidden" name="client_id" value={post.client_id} />
+                      <input type="hidden" name="post_base_id" value={post.id} />
+                      <button class="btn btn-secondary" type="submit">Publish</button>
+                    </form>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

@@ -1,0 +1,116 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import {
+  getJobs,
+  updateDeploymentStatus,
+} from '../../lib/client-data';
+import { supabaseAdmin } from '../../lib/supabase';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'set-deployment-status') {
+    const deploymentId = String(formData.get('deployment_id') ?? '');
+    const nextStatus = String(formData.get('next_status') ?? '');
+
+    await updateDeploymentStatus(deploymentId, nextStatus);
+
+    return Astro.redirect('/admin/deployments?updated=1');
+  }
+}
+
+const { data: deployments, error } = await supabaseAdmin
+  .from('deployments')
+  .select(`
+    *,
+    clients (
+      company_name
+    )
+  `)
+  .order('created_at', { ascending: false });
+
+if (error) {
+  throw new Error(`Błąd pobierania deployments: ${error.message}`);
+}
+
+const url = new URL(Astro.request.url);
+const updated = url.searchParams.get('updated');
+---
+
+<AdminLayout title="Admin — Deployments">
+  <div class="card">
+    <h1>Deployment History</h1>
+    <p class="muted">
+      Historia preview, publish i rollbacków w systemie.
+    </p>
+
+    {updated && <p><strong>Zmieniono status deploymentu.</strong></p>}
+  </div>
+
+  <div class="card">
+    {deployments.length === 0 ? (
+      <p class="muted">Brak deploymentów.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Klient</th>
+            <th>Typ</th>
+            <th>Status</th>
+            <th>Snapshot</th>
+            <th>URL</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deployments.map((item) => (
+            <tr>
+              <td>{item.clients?.company_name ?? item.client_id}</td>
+              <td>{item.type}</td>
+              <td>
+  <span class="pill">
+    {item.status ?? 'unknown'}
+  </span>
+</td>
+              <td>{item.snapshot_id}</td>
+              <td>{item.deploy_url ?? '-'}</td>
+              <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <form method="POST">
+  <input type="hidden" name="action" value="set-deployment-status" />
+  <input type="hidden" name="deployment_id" value={item.id} />
+  <input type="hidden" name="next_status" value="building" />
+  <button class="btn" type="submit">Building</button>
+</form>
+
+<form method="POST">
+  <input type="hidden" name="action" value="set-deployment-status" />
+  <input type="hidden" name="deployment_id" value={item.id} />
+  <input type="hidden" name="next_status" value="preview_ready" />
+  <button class="btn" type="submit">Preview ready</button>
+</form>
+
+<form method="POST">
+  <input type="hidden" name="action" value="set-deployment-status" />
+  <input type="hidden" name="deployment_id" value={item.id} />
+  <input type="hidden" name="next_status" value="published" />
+  <button class="btn" type="submit">Published</button>
+</form>
+
+<form method="POST">
+  <input type="hidden" name="action" value="set-deployment-status" />
+  <input type="hidden" name="deployment_id" value={item.id} />
+  <input type="hidden" name="next_status" value="failed" />
+  <button class="btn btn-secondary" type="submit">Failed</button>
+</form>
+                  <a href={`/admin/deployments/${item.id}`}>Szczegóły</a>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

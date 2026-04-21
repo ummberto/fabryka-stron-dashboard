@@ -1,0 +1,80 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="Definition of Done — MVP">
+  <div class="card">
+    <h1>Definition of Done — v3 MVP</h1>
+    <p class="muted">
+      Operacyjna checklista domknięcia MVP.
+    </p>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Obszar</th>
+          <th>Co powinno działać</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Source of Truth</td>
+          <td>Supabase jako centralna baza klientów, usług, stron, lokalizacji i logów.</td>
+        </tr>
+        <tr>
+          <td>Frontend live</td>
+          <td>Publiczne strony czytają dane klienta i renderują podstawowe trasy.</td>
+        </tr>
+        <tr>
+          <td>Dashboard operatora</td>
+          <td>Lista klientów, widok klienta, edycja danych bazowych.</td>
+        </tr>
+        <tr>
+          <td>Change Center</td>
+          <td>Tworzenie requestów, klasy zmian, publish modes, triage.</td>
+        </tr>
+        <tr>
+          <td>Jobs</td>
+          <td>Manualne joby, job steps, statusy operacyjne.</td>
+        </tr>
+        <tr>
+          <td>Versioning</td>
+          <td>Services, pages, locations i posts mają draft/approved/published.</td>
+        </tr>
+        <tr>
+          <td>Preview & Publish</td>
+          <td>Snapshoty, deployments, preview/publish i rollback działają.</td>
+        </tr>
+        <tr>
+          <td>Preview diff</td>
+          <td>Porównanie live vs approved przed publikacją.</td>
+        </tr>
+        <tr>
+          <td>Checklist</td>
+          <td>Publish checklist blokuje publikację przy brakach.</td>
+        </tr>
+        <tr>
+          <td>Assets</td>
+          <td>Upload mediów, asset_library, alt text i Asset QA.</td>
+        </tr>
+        <tr>
+          <td>Design</td>
+          <td>Design profiles i section variants zapisują się i wchodzą do snapshotu.</td>
+        </tr>
+        <tr>
+          <td>Indexing</td>
+          <td>Po publish tworzą się indexing events i jest panel monitoringu.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <p>
+      Ten ekran nie mierzy automatycznie wszystkiego — jest operacyjnym punktem odniesienia,
+      czy MVP zostało domknięte zgodnie z planem.
+    </p>
+  </div>
+</AdminLayout>

@@ -1,0 +1,116 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import {
+  createSystemLog,
+  getAllIndexingEvents,
+  updateIndexingEventStatus,
+} from '../../lib/client-data';
+import { supabaseAdmin } from '../../lib/supabase';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'set-indexing-status') {
+    const indexingEventId = String(formData.get('indexing_event_id') ?? '');
+    const nextStatus = String(formData.get('next_status') ?? '');
+    const deploymentId = String(formData.get('deployment_id') ?? '');
+
+    const { data: deployment, error } = await supabaseAdmin
+      .from('deployments')
+      .select('*')
+      .eq('id', deploymentId)
+      .single();
+
+    if (error || !deployment) {
+      throw new Error('Nie znaleziono deploymentu dla indexing event');
+    }
+
+    await updateIndexingEventStatus(indexingEventId, nextStatus, {
+      updated_manually: true,
+      updated_at: new Date().toISOString(),
+    });
+
+    await createSystemLog({
+      client_id: deployment.client_id,
+      log_type: 'indexing_event_updated',
+      message: `Zmieniono status indexing_event na ${nextStatus}`,
+      payload_json: {
+        indexing_event_id: indexingEventId,
+        deployment_id: deploymentId,
+        next_status: nextStatus,
+      },
+    });
+
+    return Astro.redirect('/admin/indexing?updated=1');
+  }
+}
+
+const events = await getAllIndexingEvents();
+const url = new URL(Astro.request.url);
+const updated = url.searchParams.get('updated');
+---
+
+<AdminLayout title="Admin — Indexing Events">
+  <div class="card">
+    <h1>Indexing Events</h1>
+    <p class="muted">
+      Monitoring tego, co zostało zgłoszone do indeksacji po publish.
+    </p>
+
+    {updated && <p><strong>Zmieniono status indexing event.</strong></p>}
+  </div>
+
+  <div class="card">
+    {events.length === 0 ? (
+      <p class="muted">Brak indexing events.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Deployment ID</th>
+            <th>URL</th>
+            <th>Status</th>
+            <th>Akcja</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((item) => (
+            <tr>
+              <td>{item.deployment_id}</td>
+              <td>{item.url}</td>
+              <td><span class="pill">{item.status}</span></td>
+              <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <form method="POST">
+                    <input type="hidden" name="action" value="set-indexing-status" />
+                    <input type="hidden" name="indexing_event_id" value={item.id} />
+                    <input type="hidden" name="deployment_id" value={item.deployment_id} />
+                    <input type="hidden" name="next_status" value="submitted" />
+                    <button class="btn" type="submit">Submitted</button>
+                  </form>
+
+                  <form method="POST">
+                    <input type="hidden" name="action" value="set-indexing-status" />
+                    <input type="hidden" name="indexing_event_id" value={item.id} />
+                    <input type="hidden" name="deployment_id" value={item.deployment_id} />
+                    <input type="hidden" name="next_status" value="indexed" />
+                    <button class="btn" type="submit">Indexed</button>
+                  </form>
+
+                  <form method="POST">
+                    <input type="hidden" name="action" value="set-indexing-status" />
+                    <input type="hidden" name="indexing_event_id" value={item.id} />
+                    <input type="hidden" name="deployment_id" value={item.deployment_id} />
+                    <input type="hidden" name="next_status" value="failed" />
+                    <button class="btn btn-secondary" type="submit">Failed</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

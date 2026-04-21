@@ -1,0 +1,58 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getJobSteps, getJobs } from '../../../lib/client-data';
+
+const jobId = Astro.params.id;
+
+if (!jobId) {
+  throw new Error('Brak jobId');
+}
+
+const jobs = await getJobs();
+const job = jobs.find((item) => item.id === jobId);
+
+if (!job) {
+  throw new Error('Nie znaleziono joba');
+}
+
+const steps = await getJobSteps(jobId);
+---
+
+<AdminLayout title={`Admin — Job ${job.job_type}`}>
+  <div class="card">
+    <h1>{job.job_type}</h1>
+    <p class="muted">
+      Status: {job.status} · Progress: {job.progress ?? 0}%
+    </p>
+    <p>
+      Klient: <strong>{job.clients?.company_name ?? job.client_id}</strong>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Job steps</h2>
+
+    {steps.length === 0 ? (
+      <p class="muted">Brak job steps.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th>Status</th>
+            <th>Utworzono</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step) => (
+            <tr>
+              <td>{step.step_name}</td>
+              <td><span class="pill">{step.status}</span></td>
+              <td>{new Date(step.created_at).toLocaleString('pl-PL')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

@@ -1,0 +1,274 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { classifyChangeRequest } from '../../lib/change-classifier';
+import {
+  createJob,
+  createSystemLog,
+  getAllChangeRequests,
+  updateChangeRequestStatus,
+  updateChangeRequestClassification,
+updateChangeRequestFull,
+} from '../../lib/client-data';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+if (action === 'override-classification') {
+  const requestId = String(formData.get('request_id') ?? '');
+  const requestType = String(formData.get('request_type') ?? '');
+  const clientId = String(formData.get('client_id') ?? '');
+  const changeClass = String(formData.get('change_class') ?? '');
+  const requiresAi = String(formData.get('requires_ai') ?? '') === 'true';
+  const requiresPreview = String(formData.get('requires_preview') ?? '') === 'true';
+  const publishMode = String(formData.get('publish_mode') ?? '');
+
+  await updateChangeRequestFull({
+    request_id: requestId,
+    request_type: requestType,
+    change_class: changeClass,
+    requires_ai: requiresAi,
+    requires_preview: requiresPreview,
+    publish_mode: publishMode,
+    status: 'triaged',
+  });
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'request_classification_overridden',
+    message: 'Ręcznie nadpisano klasyfikację requestu',
+    payload_json: {
+      request_id: requestId,
+      request_type: requestType,
+      change_class: changeClass,
+      requires_ai: requiresAi,
+      requires_preview: requiresPreview,
+      publish_mode: publishMode,
+    },
+  });
+
+  return Astro.redirect('/admin/changes?overridden=1');
+}
+if (action === 'auto-classify-request') {
+  const requestId = String(formData.get('request_id') ?? '');
+  const requestType = String(formData.get('request_type') ?? '');
+  const clientId = String(formData.get('client_id') ?? '');
+
+  const classification = classifyChangeRequest(requestType);
+
+  await updateChangeRequestClassification({
+    request_id: requestId,
+    change_class: classification.change_class,
+    requires_ai: classification.requires_ai,
+    requires_preview: classification.requires_preview,
+    publish_mode: classification.publish_mode,
+  });
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'request_auto_classified',
+    message: `Automatycznie sklasyfikowano request ${requestType}`,
+    payload_json: classification,
+  });
+
+  return Astro.redirect('/admin/changes?classified=1');
+}
+  if (action === 'update-request-status') {
+    const requestId = String(formData.get('request_id') ?? '');
+    const nextStatus = String(formData.get('next_status') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+
+    await updateChangeRequestStatus(requestId, nextStatus);
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'change_request_status_updated',
+      message: `Zmieniono status requestu na ${nextStatus}`,
+      payload_json: {
+        request_id: requestId,
+        next_status: nextStatus,
+      },
+    });
+
+    return Astro.redirect('/admin/changes?updated=1');
+  }
+
+  if (action === 'create-job-from-request') {
+  const requestId = String(formData.get('request_id') ?? '');
+  const clientId = String(formData.get('client_id') ?? '');
+  const changeClass = String(formData.get('change_class') ?? '');
+  let jobType = String(formData.get('job_type') ?? '');
+
+  if (!jobType) {
+    if (changeClass === 'quick_edit') jobType = 'instant_rebuild';
+    else if (changeClass === 'content_edit') jobType = 'rewrite_section';
+    else if (changeClass === 'structural_edit') jobType = 'build_preview';
+    else if (changeClass === 'design_edit') jobType = 'build_preview';
+    else jobType = 'manual_review';
+  }
+
+  await createJob({
+    client_id: clientId,
+    request_id: requestId,
+    job_type: jobType,
+    trigger_source: 'change_center',
+    payload_json: {
+      source: 'change_request',
+      request_id: requestId,
+      change_class: changeClass,
+    },
+  });
+
+  await updateChangeRequestStatus(requestId, 'draft_in_progress');
+
+  await createSystemLog({
+    client_id: clientId,
+    log_type: 'job_created_from_request',
+    message: `Utworzono job ${jobType} dla requestu`,
+    payload_json: {
+      request_id: requestId,
+      job_type: jobType,
+      change_class: changeClass,
+    },
+  });
+
+  return Astro.redirect('/admin/changes?job_created=1');
+}
+}
+
+const requests = await getAllChangeRequests();
+const url = new URL(Astro.request.url);
+const updated = url.searchParams.get('updated');
+const jobCreated = url.searchParams.get('job_created');
+const classified = url.searchParams.get('classified');
+const overridden = url.searchParams.get('overridden');
+---
+
+<AdminLayout title="Admin — Change Center">
+  <div class="card">
+    <h1>Change Center</h1>
+    <p class="muted">
+      Globalna lista zgłoszeń zmian. Tutaj robisz triage, zmieniasz statusy i tworzysz joby.
+    </p>
+{classified && <p><strong>Request został automatycznie sklasyfikowany.</strong></p>}
+{overridden && <p><strong>Klasyfikacja requestu została ręcznie nadpisana.</strong></p>}
+    {updated && <p><strong>Zmieniono status requestu.</strong></p>}
+    {jobCreated && <p><strong>Utworzono job dla requestu.</strong></p>}
+  </div>
+
+<div class="card">
+  {requests.length === 0 ? (
+    <p class="muted">Brak change requestów.</p>
+  ) : (
+    <table class="table">
+      <thead>
+  <tr>
+    <th>Klient</th>
+    <th>Typ</th>
+    <th>Klasa</th>
+    <th>Preview</th>
+    <th>AI</th>
+    <th>Publish mode</th>
+    <th>Status</th>
+    <th>Opis</th>
+    <th>Akcje</th>
+  </tr>
+</thead>
+      <tbody>
+  {requests.map((item) => (
+    <tr>
+      <td>{item.clients?.company_name ?? item.client_id}</td>
+      <td>{item.request_type}</td>
+      <td><span class="pill">{item.change_class ?? '-'}</span></td>
+      <td>{item.requires_preview ? 'tak' : 'nie'}</td>
+      <td>{item.requires_ai ? 'tak' : 'nie'}</td>
+      <td>{item.publish_mode ?? '-'}</td>
+      <td><span class="pill">{item.status}</span></td>
+      <td>{item.requested_text ?? '-'}</td>
+      <td>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+          <form method="POST">
+            <input type="hidden" name="action" value="auto-classify-request" />
+            <input type="hidden" name="request_id" value={item.id} />
+            <input type="hidden" name="request_type" value={item.request_type} />
+            <input type="hidden" name="client_id" value={item.client_id} />
+            <button class="btn" type="submit">Auto classify</button>
+          </form>
+
+          <form method="POST">
+            <input type="hidden" name="action" value="update-request-status" />
+            <input type="hidden" name="request_id" value={item.id} />
+            <input type="hidden" name="client_id" value={item.client_id} />
+            <input type="hidden" name="next_status" value="triaged" />
+            <button class="btn" type="submit">Triaged</button>
+          </form>
+
+          <form method="POST">
+  <input type="hidden" name="action" value="create-job-from-request" />
+  <input type="hidden" name="request_id" value={item.id} />
+  <input type="hidden" name="client_id" value={item.client_id} />
+  <input type="hidden" name="change_class" value={item.change_class ?? ''} />
+  <input type="hidden" name="job_type" value="" />
+  <button class="btn btn-secondary" type="submit">Utwórz job</button>
+</form>
+        </div>
+
+        <details>
+          <summary>Ręczne nadpisanie</summary>
+
+          <form method="POST" style="margin-top:10px;">
+            <input type="hidden" name="action" value="override-classification" />
+            <input type="hidden" name="request_id" value={item.id} />
+            <input type="hidden" name="request_type" value={item.request_type} />
+            <input type="hidden" name="client_id" value={item.client_id} />
+
+            <label class="label">
+              Change class
+              <select class="select" name="change_class">
+                <option value="quick_edit">quick_edit</option>
+                <option value="content_edit">content_edit</option>
+                <option value="structural_edit">structural_edit</option>
+                <option value="design_edit">design_edit</option>
+              </select>
+            </label>
+
+            <label class="label">
+              Requires AI
+              <select class="select" name="requires_ai">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+
+            <label class="label">
+              Requires preview
+              <select class="select" name="requires_preview">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+
+            <label class="label">
+              Publish mode
+              <select class="select" name="publish_mode">
+                <option value="instant_rebuild">instant_rebuild</option>
+                <option value="draft_then_publish">draft_then_publish</option>
+                <option value="preview_then_publish">preview_then_publish</option>
+                <option value="scheduled_publish">scheduled_publish</option>
+              </select>
+            </label>
+
+            <button class="btn" type="submit">Zapisz override</button>
+          </form>
+        </details>
+
+        <div style="margin-top:8px;">
+          <a href={`/admin/changes/${item.id}`}>Szczegóły</a>
+        </div>
+      </td>
+    </tr>
+  ))}
+</tbody>
+    </table>
+  )}
+</div>
+</AdminLayout>

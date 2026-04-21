@@ -1,0 +1,211 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import {
+  createLocationDraftVersion,
+  createSystemLog,
+  getLocationById,
+  getLocationVersions,
+  publishLocationVersionToBase,
+  saveContentDiff,
+  updateLocationVersionStatus,
+} from '../../../lib/client-data';
+
+const locationId = Astro.params.id;
+
+if (!locationId) {
+  throw new Error('Brak locationId');
+}
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') ?? '');
+
+  if (action === 'create-location-draft') {
+    const clientId = String(formData.get('client_id') ?? '');
+    const locationCity = String(formData.get('location_city') ?? '');
+    const oldDescription = String(formData.get('old_description') ?? '');
+    const newDescription = String(formData.get('description') ?? '');
+
+    const version = await createLocationDraftVersion({
+      location_id: locationId,
+      description: newDescription,
+      metadata: {
+        location_city: locationCity,
+      },
+      source: 'operator_panel',
+    });
+
+    await saveContentDiff({
+      before_json: {
+        description: oldDescription,
+      },
+      after_json: {
+        description: newDescription,
+      },
+      diff_summary: `Utworzono draft wersji dla lokalizacji ${locationCity}`,
+    });
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'location_draft_created',
+      message: `Utworzono draft version v${version.version_no} dla lokalizacji ${locationCity}`,
+      payload_json: {
+        location_id: locationId,
+        version_id: version.id,
+      },
+    });
+
+    return Astro.redirect(`/admin/locations/${locationId}?draft_created=1`);
+  }
+
+  if (action === 'approve-location-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+
+    const version = await updateLocationVersionStatus(versionId, 'approved');
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'location_version_approved',
+      message: `Zatwierdzono location version v${version.version_no}`,
+      payload_json: {
+        version_id: versionId,
+      },
+    });
+
+    return Astro.redirect(`/admin/locations/${locationId}?approved=1`);
+  }
+
+  if (action === 'publish-location-version') {
+    const versionId = String(formData.get('version_id') ?? '');
+    const clientId = String(formData.get('client_id') ?? '');
+    const locationBaseId = String(formData.get('location_base_id') ?? '');
+
+    const versions = await getLocationVersions(locationId);
+    const selectedVersion = versions.find((v) => v.id === versionId);
+
+    if (!selectedVersion) {
+      throw new Error('Nie znaleziono wybranej wersji lokalizacji');
+    }
+
+    await publishLocationVersionToBase(
+      locationBaseId,
+      selectedVersion.description ?? ''
+    );
+
+    const version = await updateLocationVersionStatus(versionId, 'published');
+
+    await createSystemLog({
+      client_id: clientId,
+      log_type: 'location_version_published',
+      message: `Opublikowano location version v${version.version_no}`,
+      payload_json: {
+        version_id: versionId,
+        location_id: locationBaseId,
+      },
+    });
+
+    return Astro.redirect(`/admin/locations/${locationId}?published=1`);
+  }
+}
+
+const location = await getLocationById(locationId);
+const versions = await getLocationVersions(locationId);
+
+const url = new URL(Astro.request.url);
+const draftCreated = url.searchParams.get('draft_created');
+const approved = url.searchParams.get('approved');
+const published = url.searchParams.get('published');
+---
+
+<AdminLayout title={`Admin — lokalizacja ${location.city}`}>
+  <div class="card">
+    <h1>Lokalizacja: {location.city}</h1>
+    <p class="muted">Versioning MVP dla lokalizacji.</p>
+
+    {draftCreated && <p><strong>Utworzono draft wersji lokalizacji.</strong></p>}
+    {approved && <p><strong>Zatwierdzono wersję lokalizacji.</strong></p>}
+    {published && <p><strong>Opublikowano wersję lokalizacji.</strong></p>}
+
+<p style="margin-top:16px;">
+  <a href="/admin/changes">Przejdź do Change Center</a>
+</p>
+</div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Aktualny rekord bazowy</h2>
+      <p><strong>Miasto:</strong> {location.city}</p>
+      <p><strong>Slug:</strong> {location.slug}</p>
+      <p><strong>Aktualna wartość live (tymczasowo w region):</strong> {location.region ?? '-'}</p>
+    </div>
+
+    <div class="card">
+      <h2>Utwórz draft version</h2>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="create-location-draft" />
+        <input type="hidden" name="client_id" value={location.client_id} />
+        <input type="hidden" name="location_city" value={location.city} />
+        <input type="hidden" name="old_description" value={location.region ?? ''} />
+
+        <label class="label">
+          Nowa treść lokalizacji
+          <textarea class="textarea" name="description">{location.region ?? ''}</textarea>
+        </label>
+
+        <button class="btn" type="submit">Utwórz draft</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Wersje lokalizacji</h2>
+
+    {versions.length === 0 ? (
+      <p class="muted">Brak wersji lokalizacji.</p>
+    ) : (
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Treść</th>
+            <th>Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {versions.map((version) => (
+            <tr>
+              <td>v{version.version_no}</td>
+              <td><span class="pill">{version.status}</span></td>
+              <td>{version.description?.slice(0, 160) ?? '-'}</td>
+              <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  {version.status === 'draft' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="approve-location-version" />
+                      <input type="hidden" name="version_id" value={version.id} />
+                      <input type="hidden" name="client_id" value={location.client_id} />
+                      <button class="btn" type="submit">Approve</button>
+                    </form>
+                  )}
+
+                  {version.status === 'approved' && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="publish-location-version" />
+                      <input type="hidden" name="version_id" value={version.id} />
+                      <input type="hidden" name="client_id" value={location.client_id} />
+                      <input type="hidden" name="location_base_id" value={location.id} />
+                      <button class="btn btn-secondary" type="submit">Publish</button>
+                    </form>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</AdminLayout>

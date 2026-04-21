@@ -1,0 +1,99 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import {
+  getSystemHealthForClient,
+} from '../../../../lib/client-data';
+
+const clientId = Astro.params.id;
+
+if (!clientId) {
+  throw new Error('Brak clientId');
+}
+
+const health = await getSystemHealthForClient(clientId);
+---
+
+<AdminLayout title={`System Health — ${health.client.company_name}`}>
+  <div class="card">
+    <h1>System Health</h1>
+    <p class="muted">
+      Jeden widok do oceny gotowości operacyjnej klienta i całego przepływu MVP.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Liczby</h2>
+
+    <table class="table">
+      <tbody>
+        <tr><td>Usługi</td><td>{health.counts.services}</td></tr>
+        <tr><td>Strony</td><td>{health.counts.pages}</td></tr>
+        <tr><td>Lokalizacje</td><td>{health.counts.locations}</td></tr>
+        <tr><td>Wpisy</td><td>{health.counts.posts}</td></tr>
+        <tr><td>Assety</td><td>{health.counts.assets}</td></tr>
+        <tr><td>Deployments</td><td>{health.counts.deployments}</td></tr>
+        <tr><td>System logs</td><td>{health.counts.logs}</td></tr>
+        <tr><td>Change requests</td><td>{health.counts.requests}</td></tr>
+        <tr><td>Section variants</td><td>{health.counts.sectionVariants}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Kontrole systemowe</h2>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Check</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {health.checks.map((item) => (
+          <tr>
+            <td>{item.label}</td>
+            <td><span class="pill">{item.ok ? 'OK' : 'BRAK'}</span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Ostrzeżenia</h2>
+
+    {health.warnings.length === 0 ? (
+      <p class="muted">Brak ostrzeżeń. System wygląda zdrowo.</p>
+    ) : (
+      <ul>
+        {health.warnings.map((item) => (
+          <li>{item}</li>
+        ))}
+      </ul>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>Ostatnie zdarzenia</h2>
+
+    <p><strong>Ostatni deployment:</strong> {health.latestDeployment ? `${health.latestDeployment.type} / ${health.latestDeployment.status}` : '-'}</p>
+    <p><strong>Ostatni log:</strong> {health.latestLog ? `${health.latestLog.log_type} — ${health.latestLog.message}` : '-'}</p>
+  </div>
+
+  <div class="card">
+    <h2>Dalsze kroki</h2>
+
+    <p style="margin-bottom: 12px;">
+      <a href={`/admin/clients/${clientId}/publish-checklist`}>Przejdź do Publish Checklist</a>
+    </p>
+
+    <p style="margin-bottom: 12px;">
+      <a href={`/admin/clients/${clientId}/preview-diff`}>Przejdź do Preview Diff Center</a>
+    </p>
+
+    <p>
+      <a href={`/admin/clients/${clientId}/design`}>Przejdź do Design Studio</a>
+    </p>
+  </div>
+</AdminLayout>
