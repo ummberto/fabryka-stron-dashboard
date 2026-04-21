@@ -1,34 +1,519 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
-import { getClientPage, getClientSiteConfig } from '../lib/client-data';
+// kontakt.astro — Strona Kontakt (VoltsFlow template)
+
+import VoltsFlowLayout from '../layouts/VoltsFlowLayout.astro';
+import {
+  getAssetsByClientId,
+  getClientById,
+  getClientPage,
+  getClientSiteConfig,
+  getDesignProfileByClientId,
+  getPublicAssetUrl,
+} from '../lib/client-data';
+import { buildLocalBusinessSchema, buildBreadcrumbSchema, toSchemaScriptTag } from '../lib/schema';
+import { getFallbackImages } from '../lib/fallback-images';
 
 const clientId = import.meta.env.TEST_CLIENT_ID;
+if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
-if (!clientId) {
-  throw new Error('Brak TEST_CLIENT_ID w env');
-}
+const [siteConfig, client, contactPage, profile, assets] = await Promise.all([
+  getClientSiteConfig(clientId),
+  getClientById(clientId),
+  getClientPage(clientId, 'contact'),
+  getDesignProfileByClientId(clientId),
+  getAssetsByClientId(clientId),
+]);
 
-const siteConfig = await getClientSiteConfig(clientId);
-const contactPage = await getClientPage(clientId, 'contact');
+const logoAsset = assets.find((a) => a.type === 'logo') ?? null;
+const logoUrl = logoAsset ? getPublicAssetUrl(logoAsset.storage_path) : null;
+
+const fb = getFallbackImages(profile?.template_family, client?.industry ?? null);
+
+const meta       = (contactPage as any)?.metadata ?? {};
+const metaTitle  = meta.meta_title ?? contactPage?.meta_title ?? `Kontakt | ${siteConfig.site_name}`;
+const metaDesc   = meta.meta_description ?? contactPage?.meta_description ?? `Skontaktuj się z ${siteConfig.site_name}${siteConfig.city ? ` w ${siteConfig.city}` : ''}.`;
+const h1Text     = meta.h1 ?? contactPage?.title ?? 'Kontakt';
+
+const domain = siteConfig.domain ? `https://${siteConfig.domain.replace(/^https?:\/\//, '')}` : '';
+const schemaScripts = [
+  toSchemaScriptTag(buildLocalBusinessSchema({
+    name: siteConfig.site_name ?? '',
+    phone: siteConfig.phone ?? '',
+    email: siteConfig.email ?? '',
+    address: siteConfig.address ?? '',
+    city: siteConfig.city ?? '',
+    url: domain,
+  })),
+  toSchemaScriptTag(buildBreadcrumbSchema({ items: [{ name: 'Start', url: domain || '/' }, { name: 'Kontakt', url: `${domain}/kontakt` }] })),
+];
+
+const phone = siteConfig.phone ?? '';
+const email = siteConfig.email ?? '';
+const address = siteConfig.address ?? '';
+const city = siteConfig.city ?? '';
 ---
 
-<BaseLayout
-  title={contactPage.meta_title ?? 'Kontakt'}
-  description={contactPage.meta_description ?? 'Kontakt'}
+<VoltsFlowLayout
+  title={metaTitle}
+  description={metaDesc}
+  canonicalUrl={domain ? `${domain}/kontakt` : undefined}
+  schemaScripts={schemaScripts}
+  siteConfig={siteConfig}
+  logoUrl={logoUrl}
 >
-  <main class="container" style="padding: 56px 20px;">
-    <h1>{contactPage.title ?? 'Kontakt'}</h1>
-    <p>{contactPage.body_markdown}</p>
+  <slot name="footer-services" slot="footer-services" />
+  <slot name="footer-locations" slot="footer-locations" />
 
-    <hr style="margin: 30px 0;" />
+  <!-- ── PAGE HERO ────────────────────────────────────────────────────── -->
+  <section class="vf-page-hero">
+    <div class="vf-container">
+      <div class="vf-page-hero__breadcrumb">
+        <a href="/">Start</a>
+        <span aria-hidden="true">→</span>
+        <span aria-current="page">Kontakt</span>
+      </div>
+      <h1 class="vf-page-hero__title">{h1Text}</h1>
+      <p class="vf-page-hero__lead">{metaDesc}</p>
+    </div>
+  </section>
 
-    <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
-    <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
-    <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
-    <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+  <!-- ── CONTACT GRID ──────────────────────────────────────────────────── -->
+  <section class="vf-section">
+    <div class="vf-container">
+      <div class="vf-contact-layout">
 
-    <p style="margin-top: 24px;">
-      <a href="/">← Wróć na stronę główną</a>
-    </p>
-  </main>
-</BaseLayout>
+        <!-- Formularz -->
+        <div class="vf-contact-form-wrap">
+          <div class="vf-eyebrow">Napisz do nas</div>
+          <h2 class="vf-h2">Bezpłatna wycena</h2>
+          <p class="vf-contact-form-lead">Opisz swój problem lub potrzebę — odpiszemy w ciągu 24 godzin.</p>
+
+          <form class="vf-contact-form" id="contactForm" novalidate>
+            <div class="vf-field-row">
+              <label class="vf-field">
+                <span class="vf-field__label">Imię i nazwisko <span aria-hidden="true">*</span></span>
+                <input type="text" name="name" class="vf-field__input" placeholder="Jan Kowalski" required autocomplete="name" />
+              </label>
+              <label class="vf-field">
+                <span class="vf-field__label">Telefon <span aria-hidden="true">*</span></span>
+                <input type="tel" name="phone" class="vf-field__input" placeholder="500 000 000" required autocomplete="tel" />
+              </label>
+            </div>
+            <label class="vf-field">
+              <span class="vf-field__label">E-mail</span>
+              <input type="email" name="email" class="vf-field__input" placeholder="jan@example.pl" autocomplete="email" />
+            </label>
+            <label class="vf-field">
+              <span class="vf-field__label">Temat</span>
+              <select name="topic" class="vf-field__input vf-field__select">
+                <option value="">Wybierz temat...</option>
+                <option>Wycena usługi</option>
+                <option>Awaria / nagłe zgłoszenie</option>
+                <option>Konsultacja</option>
+                <option>Reklamacja</option>
+                <option>Inne</option>
+              </select>
+            </label>
+            <label class="vf-field">
+              <span class="vf-field__label">Wiadomość <span aria-hidden="true">*</span></span>
+              <textarea name="message" class="vf-field__input vf-field__textarea" rows="5" placeholder="Opisz swoją potrzebę..." required></textarea>
+            </label>
+            <label class="vf-field vf-field--checkbox">
+              <input type="checkbox" name="rodo" required />
+              <span class="vf-field__label">Wyrażam zgodę na przetwarzanie moich danych osobowych w celu odpowiedzi na zapytanie. <span aria-hidden="true">*</span></span>
+            </label>
+            <button type="submit" class="vf-btn vf-btn--primary vf-btn--full">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              Wyślij wiadomość
+            </button>
+            <div class="vf-form-success" id="formSuccess" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Dziękujemy! Skontaktujemy się z Tobą wkrótce.
+            </div>
+          </form>
+        </div>
+
+        <!-- Info kontaktowe -->
+        <div class="vf-contact-info">
+          <div class="vf-contact-info__card">
+            <div class="vf-eyebrow">Dane kontaktowe</div>
+            <h2 class="vf-h2" style="font-size:clamp(22px,3vw,30px);">Odezwij się do nas</h2>
+
+            {phone && (
+              <a href={`tel:${phone.replace(/\s/g,'')}`} class="vf-contact-detail">
+                <div class="vf-contact-detail__icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+                </div>
+                <div>
+                  <div class="vf-contact-detail__label">Telefon</div>
+                  <div class="vf-contact-detail__value">{phone}</div>
+                </div>
+              </a>
+            )}
+
+            {email && (
+              <a href={`mailto:${email}`} class="vf-contact-detail">
+                <div class="vf-contact-detail__icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <div>
+                  <div class="vf-contact-detail__label">E-mail</div>
+                  <div class="vf-contact-detail__value">{email}</div>
+                </div>
+              </a>
+            )}
+
+            {(address || city) && (
+              <div class="vf-contact-detail">
+                <div class="vf-contact-detail__icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                </div>
+                <div>
+                  <div class="vf-contact-detail__label">Adres</div>
+                  <div class="vf-contact-detail__value">{[address, city].filter(Boolean).join(', ')}</div>
+                </div>
+              </div>
+            )}
+
+            <div class="vf-contact-detail">
+              <div class="vf-contact-detail__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+              </div>
+              <div>
+                <div class="vf-contact-detail__label">Godziny pracy</div>
+                <div class="vf-contact-detail__value">Pn–Pt: 8:00–18:00</div>
+                <div class="vf-contact-detail__value" style="font-size:13px;opacity:.7;">Sob: 9:00–14:00 · Nd: zamknięte</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Emergency CTA -->
+          {phone && (
+            <div class="vf-emergency-card">
+              <div class="vf-emergency-card__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div>
+                <strong>Awaria? Działamy 24/7</strong>
+                <p>W nagłych przypadkach zadzwoń natychmiast — odbieramy non-stop.</p>
+                <a href={`tel:${phone.replace(/\s/g,'')}`} class="vf-btn vf-btn--primary" style="margin-top:12px;">
+                  Zadzwoń teraz: {phone}
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MAP PLACEHOLDER ───────────────────────────────────────────────── -->
+  {city && (
+    <section class="vf-map-section">
+      <div class="vf-map-placeholder" aria-label={`Mapa — ${city}`}>
+        <div class="vf-map-placeholder__inner">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <strong>{city}</strong>
+          {address && <span>{address}</span>}
+        </div>
+      </div>
+    </section>
+  )}
+</VoltsFlowLayout>
+
+<style>
+/* ── Page Hero ──────────────────────────────────────────────────────────── */
+.vf-page-hero {
+  background: var(--heading);
+  padding: clamp(60px, 10vw, 120px) 0 clamp(48px, 8vw, 80px);
+}
+.vf-page-hero__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  margin-bottom: 24px;
+}
+.vf-page-hero__breadcrumb a {
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  transition: color .2s;
+}
+.vf-page-hero__breadcrumb a:hover { color: var(--accent); }
+.vf-page-hero__title {
+  font-family: var(--font-h);
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin: 0 0 20px;
+}
+.vf-page-hero__lead {
+  font-size: clamp(15px, 1.8vw, 18px);
+  color: rgba(255,255,255,0.65);
+  max-width: 600px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ── Contact Layout ─────────────────────────────────────────────────────── */
+.vf-contact-layout {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: clamp(40px, 6vw, 80px);
+  align-items: start;
+}
+.vf-contact-form-lead {
+  color: var(--body);
+  font-size: 15px;
+  line-height: 1.7;
+  margin: 12px 0 32px;
+}
+
+/* ── Form ───────────────────────────────────────────────────────────────── */
+.vf-contact-form { display: flex; flex-direction: column; gap: 20px; }
+.vf-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.vf-field { display: flex; flex-direction: column; gap: 6px; }
+.vf-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--heading);
+}
+.vf-field__label span { color: var(--accent); }
+.vf-field__input {
+  padding: 12px 16px;
+  border: 1.5px solid #dde3ea;
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--heading);
+  background: #fff;
+  transition: border-color .2s;
+  outline: none;
+  font-family: var(--font-b);
+}
+.vf-field__input:focus { border-color: var(--accent); }
+.vf-field__select { cursor: pointer; }
+.vf-field__textarea { resize: vertical; min-height: 130px; }
+.vf-field--checkbox {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+.vf-field--checkbox input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.vf-field--checkbox .vf-field__label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--body);
+  cursor: pointer;
+}
+.vf-btn--full { width: 100%; justify-content: center; }
+.vf-form-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #edfaf3;
+  border: 1.5px solid #4caf88;
+  border-radius: var(--radius);
+  color: #1a6641;
+  font-size: 14px;
+  font-weight: 600;
+}
+.vf-form-success svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: #4caf88;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* ── Contact Info ───────────────────────────────────────────────────────── */
+.vf-contact-info { display: flex; flex-direction: column; gap: 20px; }
+.vf-contact-info__card {
+  background: var(--bg-grey);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  border: 1px solid #e5eaf0;
+}
+.vf-contact-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e5eaf0;
+  text-decoration: none;
+  color: inherit;
+  transition: opacity .2s;
+}
+.vf-contact-detail:last-child { border-bottom: none; }
+.vf-contact-detail:is(a):hover { opacity: .75; }
+.vf-contact-detail__icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: rgba(255,98,41,.1);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vf-contact-detail__icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vf-contact-detail__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--body);
+  margin-bottom: 4px;
+}
+.vf-contact-detail__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--heading);
+}
+
+/* ── Emergency ──────────────────────────────────────────────────────────── */
+.vf-emergency-card {
+  background: var(--heading);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.vf-emergency-card__icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: rgba(255,98,41,.15);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vf-emergency-card__icon svg {
+  width: 20px;
+  height: 20px;
+  fill: var(--accent);
+}
+.vf-emergency-card strong {
+  display: block;
+  font-family: var(--font-h);
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.vf-emergency-card p {
+  font-size: 13px;
+  color: rgba(255,255,255,.65);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Map ────────────────────────────────────────────────────────────────── */
+.vf-map-section { background: var(--bg-grey); }
+.vf-map-placeholder {
+  height: 300px;
+  background: #dde3ea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vf-map-placeholder__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--body);
+}
+.vf-map-placeholder__inner svg {
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vf-map-placeholder__inner strong { font-size: 18px; color: var(--heading); }
+.vf-map-placeholder__inner span { font-size: 14px; }
+
+/* ── Shared ─────────────────────────────────────────────────────────────── */
+.vf-section { padding: clamp(60px, 8vw, 100px) 0; }
+.vf-container { max-width: 1240px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 48px); }
+.vf-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.vf-h2 {
+  font-family: var(--font-h);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 800;
+  color: var(--heading);
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+.vf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-radius: var(--radius);
+  font-family: var(--font-h);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  transition: all .2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.vf-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.vf-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.vf-btn--primary:hover { background: #e8541f; border-color: #e8541f; }
+
+@media (max-width: 900px) {
+  .vf-contact-layout { grid-template-columns: 1fr; }
+  .vf-field-row { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+const form = document.getElementById('contactForm') as HTMLFormElement | null;
+const successEl = document.getElementById('formSuccess');
+
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = 'Wysyłanie...';
+
+  // Symulacja wysyłki (bez backendu)
+  await new Promise((r) => setTimeout(r, 800));
+
+  form.style.display = 'none';
+  if (successEl) successEl.hidden = false;
+});
+</script>

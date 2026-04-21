@@ -2,88 +2,197 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import {
   getAllClientLocations,
+  getAssetsByClientId,
   getClientServices,
   getClientSiteConfig,
+  getDesignProfileByClientId,
   getLocationBySlug,
+  getPublicAssetUrl,
 } from '../../lib/client-data';
+import { buildLocationPageSchemas, toSchemaScriptTag } from '../../lib/schema';
 
 const clientId = import.meta.env.TEST_CLIENT_ID;
-
-if (!clientId) {
-  throw new Error('Brak TEST_CLIENT_ID w env');
-}
+if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
 export async function getStaticPaths() {
   const clientId = import.meta.env.TEST_CLIENT_ID;
-
-  if (!clientId) {
-    throw new Error('Brak TEST_CLIENT_ID w env w getStaticPaths');
-  }
-
+  if (!clientId) throw new Error('Brak TEST_CLIENT_ID');
   const locations = await getAllClientLocations(clientId);
-
-  return locations.map((location) => ({
-    params: { slug: location.slug },
-  }));
+  return locations.map((loc) => ({ params: { slug: loc.slug } }));
 }
 
 const { slug } = Astro.params;
+if (!slug) throw new Error('Brak slug lokalizacji');
 
-if (!slug) {
-  throw new Error('Brak slug lokalizacji');
+const [siteConfig, location, services, profile, assets] = await Promise.all([
+  getClientSiteConfig(clientId),
+  getLocationBySlug(clientId, slug),
+  getClientServices(clientId),
+  getDesignProfileByClientId(clientId),
+  getAssetsByClientId(clientId),
+]);
+
+const logoAsset     = assets.find((a) => a.type === 'logo') ?? null;
+const heroAsset     = assets.find((a) => a.type === 'hero') ?? null;
+const serviceAssets = assets.filter((a) => a.type === 'service');
+const galleryAssets = assets.filter((a) => a.type === 'gallery');
+const cardPool      = [...serviceAssets, ...galleryAssets];
+
+const logoUrl = logoAsset ? getPublicAssetUrl(logoAsset.storage_path) : null;
+const heroUrl = heroAsset ? getPublicAssetUrl(heroAsset.storage_path) : null;
+
+function cardImg(i: number) {
+  if (cardPool.length === 0) return null;
+  return cardPool[i % cardPool.length];
 }
 
-const siteConfig = await getClientSiteConfig(clientId);
-const location = await getLocationBySlug(clientId, slug);
-const services = await getClientServices(clientId);
+// seo-local: unique content per location (not doorway page)
+const metaTitle = `${siteConfig.site_name ?? ''} — ${location.city} | ${services.slice(0,2).map(s=>s.name).join(', ')}`;
+const metaDesc  = `${siteConfig.site_name} świadczy usługi w ${location.city}${location.region ? ` i okolicach (${location.region})` : ''}. ${services.slice(0,2).map(s=>s.name).join(', ')}. Zadzwoń: ${siteConfig.phone ?? ''}.`;
+const domain    = siteConfig.domain ? `https://${siteConfig.domain.replace(/^https?:\/\//, '')}` : '';
+
+const locationSchemas = buildLocationPageSchemas({
+  location: { city: location.city, slug, region: location.region },
+  siteConfig,
+  client: { company_name: siteConfig.site_name ?? '', industry: profile?.template_family ?? 'universal' },
+  services: services.map((s) => ({ name: s.name })),
+});
+const schemaScripts = locationSchemas.map(toSchemaScriptTag);
 ---
 
 <BaseLayout
-  title={`${siteConfig.site_name ?? 'Firma'} - ${location.city}`}
-  description={`Usługi w lokalizacji ${location.city}`}
+  title={metaTitle}
+  description={metaDesc}
+  canonicalUrl={domain ? `${domain}/lokalizacje/${slug}` : undefined}
+  {schemaScripts}
+  {profile}
 >
-  <header>
-    <div class="container header-inner">
-      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
-
-      <nav>
-        <a href="/">Home</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="site-logo" aria-label={siteConfig.site_name ?? 'Strona główna'}>
+        {logoUrl ? <img src={logoUrl} alt={logoAsset?.alt_text ?? siteConfig.site_name ?? 'Logo'} width="120" height="40" style="height:36px;width:auto;object-fit:contain;" loading="eager" /> : siteConfig.site_name ?? 'Firma'}
+      </a>
+      <nav class="site-nav" aria-label="Nawigacja główna">
+        <a href="/">Start</a>
         <a href="/o-nas">O nas</a>
         <a href="/kontakt">Kontakt</a>
       </nav>
+      {siteConfig.phone && (
+        <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="header-phone" aria-label={`Zadzwoń: ${siteConfig.phone}`}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+          {siteConfig.phone}
+        </a>
+      )}
     </div>
   </header>
 
-  <main class="container" style="padding: 56px 20px;">
-    <p><a href="/">← Wróć na stronę główną</a></p>
+  <!-- HERO: seo-local — city w H1, unique intro -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-inner">
+        <div>
+          <!-- Breadcrumb -->
+          <nav aria-label="Breadcrumb" style="margin-bottom:20px;">
+            <ol style="display:flex;gap:8px;list-style:none;font-size:12px;color:var(--text-muted);align-items:center;">
+              <li><a href="/" style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;">Start</a></li>
+              <li aria-hidden="true" style="opacity:.4;">→</li>
+              <li style="color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;">{location.city}</li>
+            </ol>
+          </nav>
 
-    <h1>{siteConfig.site_name} — {location.city}</h1>
+          <div class="hero-eyebrow" aria-hidden="true">{location.region ?? location.city}</div>
+          <!-- H1: city + firma (seo-local: city must be in H1) -->
+          <h1 class="hero-title">{siteConfig.site_name}<br />{location.city}</h1>
+          <p class="hero-desc">
+            Świadczymy usługi na terenie {location.city}{location.region ? ` i ${location.region}` : ''}. Szybka reakcja, terminowość, gwarancja jakości.
+          </p>
+          <div class="hero-actions">
+            {siteConfig.phone && (
+              <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="btn">Zadzwoń — {siteConfig.phone}</a>
+            )}
+            <a href="/kontakt" class="btn btn-outline">Napisz do nas</a>
+          </div>
+        </div>
 
-    <p>
-      Obsługujemy klientów w lokalizacji: <strong>{location.city}</strong>
-      {location.region ? `, ${location.region}` : ''}.
-    </p>
+        {heroUrl && (
+          <div class="hero-aside">
+            <img src={heroUrl} alt={heroAsset?.alt_text ?? `${siteConfig.site_name} — ${location.city}`}
+              width="560" height="420" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-lg);" loading="eager" fetchpriority="high" />
+          </div>
+        )}
+      </div>
+    </div>
+  </section>
 
-    {location.is_main && (
-      <p><strong>To jest lokalizacja główna.</strong></p>
-    )}
+  <!-- USŁUGI W TEJ LOKALIZACJI (seo-local: dedicated service pages) -->
+  <section class="section" aria-labelledby="services-heading">
+    <div class="container">
+      <div class="section-eyebrow" aria-hidden="true">Co oferujemy w {location.city}</div>
+      <h2 class="section-title" id="services-heading">Nasze usługi</h2>
+      <div class="grid-services">
+        {services.map((service, i) => {
+          const img = cardImg(i);
+          return (
+            <a href={`/uslugi/${service.slug}`} class="service-card" aria-label={`${service.name} — dowiedz się więcej`}>
+              {img && (
+                <img src={getPublicAssetUrl(img.storage_path)} alt={img.alt_text ?? service.name}
+                  width="400" height="267" class="service-card-img" loading="lazy" />
+              )}
+              <div class="service-num" aria-hidden="true">0{i + 1}</div>
+              <div class="service-name">{service.name}</div>
+              <p class="service-desc">{service.short_description ?? ''}</p>
+              <span class="service-link" aria-hidden="true">Więcej →</span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  </section>
 
-    <section style="margin-top: 32px;">
-      <h2>Dostępne usługi</h2>
-      <ul>
-        {services.map((service) => (
-          <li>
-            <a href={`/uslugi/${service.slug}`}>{service.name}</a>
-          </li>
-        ))}
-      </ul>
-    </section>
+  <!-- KONTAKT Z LOKALIZACJĄ (seo-local: NAP visible) -->
+  <section class="section">
+    <div class="container">
+      <div class="section-eyebrow" aria-hidden="true">Skontaktuj się</div>
+      <h2 class="section-title" style="margin-bottom:24px;">Dane kontaktowe</h2>
+      <div class="contact-grid">
+        {siteConfig.phone && (
+          <div class="contact-item">
+            <div class="contact-label">Telefon</div>
+            <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="contact-value phone">{siteConfig.phone}</a>
+          </div>
+        )}
+        {siteConfig.email && (
+          <div class="contact-item">
+            <div class="contact-label">E-mail</div>
+            <a href={`mailto:${siteConfig.email}`} class="contact-value">{siteConfig.email}</a>
+          </div>
+        )}
+        {(siteConfig.address || siteConfig.city) && (
+          <div class="contact-item">
+            <div class="contact-label">Adres</div>
+            <div class="contact-value" style="font-size:clamp(16px,2vw,22px);">{[siteConfig.address, siteConfig.city].filter(Boolean).join(', ')}</div>
+          </div>
+        )}
+        {location.region && (
+          <div class="contact-item">
+            <div class="contact-label">Obsługiwany obszar</div>
+            <div class="contact-value" style="font-size:clamp(16px,2vw,22px);">{location.region}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  </section>
 
-    <section style="margin-top: 32px;">
-      <h2>Kontakt</h2>
-      <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
-      <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
-      <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
-    </section>
-  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">{siteConfig.site_name}</div>
+        <div class="footer-nap">
+          {siteConfig.phone && <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`}>{siteConfig.phone}</a>}
+          {siteConfig.city && <span>{siteConfig.city}</span>}
+        </div>
+        <div class="footer-meta">{siteConfig.template_family ?? 'universal'} · v{siteConfig.template_version ?? '1'}</div>
+      </div>
+    </div>
+  </footer>
 </BaseLayout>

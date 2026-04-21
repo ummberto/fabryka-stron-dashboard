@@ -22,3 +22,18 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# claude code local config
+.claude/
+
+# local intake state
+.intake-store.json
+
+# playwright mcp cache
+.playwright-mcp/
+
+# session screenshots
+/*.png
+
+# local editor workspace
+public/dashboard.code-workspace

@@ -1,77 +1,273 @@
 ---
+// uslugi/[slug].astro — Strona usługi
+// SEO: Service schema + FAQPage schema + Breadcrumb + seo-local signals
+// Content: pełny opis z service_versions (full_description)
+
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import {
   getAllClientServices,
+  getAssetsByClientId,
   getClientSiteConfig,
+  getDesignProfileByClientId,
+  getPublicAssetUrl,
   getServiceBySlug,
+  getServiceVersions,
 } from '../../lib/client-data';
+import {
+  buildServicePageSchemas,
+  toSchemaScriptTag,
+} from '../../lib/schema';
 
 const clientId = import.meta.env.TEST_CLIENT_ID;
-
-if (!clientId) {
-  throw new Error('Brak TEST_CLIENT_ID w env');
-}
+if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
 export async function getStaticPaths() {
   const clientId = import.meta.env.TEST_CLIENT_ID;
-
-  if (!clientId) {
-    throw new Error('Brak TEST_CLIENT_ID w env w getStaticPaths');
-  }
-
+  if (!clientId) throw new Error('Brak TEST_CLIENT_ID');
   const services = await getAllClientServices(clientId);
-
-  return services.map((service) => ({
-    params: { slug: service.slug },
-  }));
+  return services.map((s) => ({ params: { slug: s.slug } }));
 }
 
 const { slug } = Astro.params;
+if (!slug) throw new Error('Brak slug');
 
-if (!slug) {
-  throw new Error('Brak slug usługi');
-}
+const [siteConfig, service, profile, assets, allServices] = await Promise.all([
+  getClientSiteConfig(clientId),
+  getServiceBySlug(clientId, slug),
+  getDesignProfileByClientId(clientId),
+  getAssetsByClientId(clientId),
+  getAllClientServices(clientId),
+]);
 
-const siteConfig = await getClientSiteConfig(clientId);
-const service = await getServiceBySlug(clientId, slug);
+// Wersje treści (seo-content-writer: pełny opis z service_versions)
+const versions = await getServiceVersions(service.id);
+const publishedVersion =
+  versions.find((v) => v.status === 'published') ??
+  versions.find((v) => v.status === 'approved') ??
+  versions[0] ?? null;
+
+const fullDescription = publishedVersion?.full_description ?? service.short_description ?? '';
+const meta = publishedVersion?.metadata as any ?? {};
+const faqItems: { question: string; answer: string }[] = meta?.faq ?? [];
+const metaTitle = meta?.meta_title ?? `${service.name} ${siteConfig.city ?? ''} | ${siteConfig.site_name}`;
+const metaDesc  = meta?.meta_description ?? `${service.name} w ${siteConfig.city ?? 'Polsce'}. ${siteConfig.site_name}. Zadzwoń: ${siteConfig.phone ?? ''}.`;
+const h1Text    = meta?.h1 ?? service.name;
+
+// Assets
+const logoAsset     = assets.find((a) => a.type === 'logo') ?? null;
+const serviceAssets = assets.filter((a) => a.type === 'service');
+const galleryAssets = assets.filter((a) => a.type === 'gallery');
+const allVisuals    = [...serviceAssets, ...galleryAssets];
+
+const logoUrl      = logoAsset ? getPublicAssetUrl(logoAsset.storage_path) : null;
+const heroImgAsset = allVisuals[0] ?? null;
+const heroImgUrl   = heroImgAsset ? getPublicAssetUrl(heroImgAsset.storage_path) : null;
+const descImages   = allVisuals.slice(1, 3);
+
+// Inne usługi (cross-links — seo-content-writer: internal links)
+const otherServices = allServices.filter((s) => s.slug !== slug).slice(0, 3);
+
+// Przetworzony opis (akapity) — w frontmatter, żeby uniknąć type annotation w JSX
+const descParagraphs: string[] = fullDescription.split('\n').filter(Boolean);
+
+// Schema
+const domain = siteConfig.domain ? `https://${siteConfig.domain.replace(/^https?:\/\//, '')}` : '';
+const serviceSchemas = buildServicePageSchemas({
+  service: { name: service.name, slug },
+  siteConfig,
+  client: { company_name: siteConfig.site_name ?? '', industry: profile?.template_family ?? 'universal' },
+  description: fullDescription.slice(0, 200),
+  imageUrl: heroImgUrl,
+  faq: faqItems.length > 0 ? faqItems : undefined,
+});
+const schemaScripts = serviceSchemas.map(toSchemaScriptTag);
+const canonicalUrl  = domain ? `${domain}/uslugi/${slug}` : undefined;
 ---
 
 <BaseLayout
-  title={`${service.name} | ${siteConfig.site_name ?? 'Usługa'}`}
-  description={service.short_description ?? `${service.name} - oferta`}
+  title={metaTitle}
+  description={metaDesc}
+  {canonicalUrl}
+  {schemaScripts}
+  {profile}
 >
-  <header>
-    <div class="container header-inner">
-      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
-
-      <nav>
-        <a href="/">Home</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="site-logo" aria-label={siteConfig.site_name ?? 'Strona główna'}>
+        {logoUrl
+          ? <img src={logoUrl} alt={logoAsset?.alt_text ?? siteConfig.site_name ?? 'Logo'} width="120" height="40" style="height:36px;width:auto;object-fit:contain;" loading="eager" />
+          : siteConfig.site_name ?? 'Firma'
+        }
+      </a>
+      <nav class="site-nav" aria-label="Nawigacja główna">
+        <a href="/">Start</a>
         <a href="/o-nas">O nas</a>
         <a href="/kontakt">Kontakt</a>
       </nav>
+      {siteConfig.phone && (
+        <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="header-phone" aria-label={`Zadzwoń: ${siteConfig.phone}`}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+          {siteConfig.phone}
+        </a>
+      )}
     </div>
   </header>
 
-  <main class="container" style="padding: 56px 20px;">
-    <p><a href="/">← Wróć na stronę główną</a></p>
+  <!-- HERO — H1 z city + service (seo-local + seo-content-writer) -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-inner">
+        <div>
+          <nav aria-label="Breadcrumb" style="margin-bottom:20px;">
+            <ol style="display:flex;gap:8px;list-style:none;font-size:12px;color:var(--text-muted);align-items:center;" itemscope itemtype="https://schema.org/BreadcrumbList">
+              <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+                <a href="/" itemprop="item" style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;"><span itemprop="name">Start</span></a>
+                <meta itemprop="position" content="1" />
+              </li>
+              <li aria-hidden="true" style="opacity:.4;">→</li>
+              <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+                <span itemprop="name" style="color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;">{service.name}</span>
+                <meta itemprop="position" content="2" />
+              </li>
+            </ol>
+          </nav>
 
-    <h1>{service.name}</h1>
-    <p>{service.short_description ?? 'Opis usługi pojawi się tutaj.'}</p>
+          <div class="hero-eyebrow" aria-hidden="true">{siteConfig.city ?? 'Usługa'}</div>
+          <h1 class="hero-title">{h1Text}</h1>
+          <p class="hero-desc">{metaDesc}</p>
 
-    <section style="margin-top: 32px;">
-      <h2>Dlaczego warto wybrać tę usługę</h2>
-      <p>
-        To jest wersja MVP. Na razie treść bierze się z encji biznesowej
-        services. Później podmienisz to na service_versions, drafty,
-        diffy i workflow publikacji.
-      </p>
+          <div class="hero-actions">
+            {siteConfig.phone && (
+              <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="btn">
+                Zadzwoń — {siteConfig.phone}
+              </a>
+            )}
+            <a href="/kontakt" class="btn btn-outline">Zapytaj o wycenę</a>
+          </div>
+        </div>
+
+        {heroImgUrl && (
+          <div class="hero-aside">
+            <img
+              src={heroImgUrl}
+              alt={heroImgAsset?.alt_text ?? service.name}
+              width="560" height="420"
+              style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-lg);"
+              loading="eager"
+              fetchpriority="high"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  </section>
+
+  <!-- PEŁNY OPIS (seo-content-writer: C02 direct answer, R01 concrete numbers) -->
+  {fullDescription && (
+    <section class="section" aria-labelledby="desc-heading">
+      <div class="container">
+        <div style={`display:grid;grid-template-columns:${descImages.length > 0 ? '1.4fr 1fr' : '1fr'};gap:clamp(40px,5vw,72px);align-items:start;`}>
+          <div>
+            <div class="section-eyebrow" aria-hidden="true">O usłudze</div>
+            <h2 class="section-title" id="desc-heading" style="margin-bottom:20px;">Szczegóły</h2>
+            <div style="color:var(--text-secondary);font-size:clamp(15px,1.7vw,17px);line-height:1.85;" itemprop="description">
+              {descParagraphs.map((para) => (
+                <p style="margin-bottom:18px;">{para}</p>
+              ))}
+            </div>
+          </div>
+
+          {descImages.length > 0 && (
+            <div style="display:flex;flex-direction:column;gap:3px;">
+              {descImages.map((a) => (
+                <img
+                  src={getPublicAssetUrl(a.storage_path)}
+                  alt={a.alt_text ?? service.name}
+                  width="480" height="360"
+                  style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-lg);"
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
+  )}
 
-    <section style="margin-top: 32px;">
-      <h2>Kontakt</h2>
-      <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
-      <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
-      <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+  <!-- FAQ (seo-content-writer: 40-60 słów/odpowiedź, FAQPage schema) -->
+  {faqItems.length > 0 && (
+    <section class="section" aria-labelledby="faq-heading">
+      <div class="container">
+        <div class="section-eyebrow" aria-hidden="true">FAQ</div>
+        <h2 class="section-title" id="faq-heading">Najczęstsze pytania</h2>
+        <div class="faq-list" style="max-width:760px;" role="list">
+          {faqItems.map((item, i) => (
+            <div class="faq-item" role="listitem">
+              <button class="faq-question" aria-expanded="false" aria-controls={`faq-ans-${i}`} id={`faq-q-${i}`}>
+                {item.question}
+                <svg class="faq-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="faq-answer" id={`faq-ans-${i}`} role="region" aria-labelledby={`faq-q-${i}`}>
+                <div class="faq-answer-inner">{item.answer}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
-  </main>
+  )}
+
+  <!-- INNE USŁUGI (seo-content-writer: internal links) -->
+  {otherServices.length > 0 && (
+    <section class="section" aria-labelledby="other-heading">
+      <div class="container">
+        <div class="section-eyebrow" aria-hidden="true">Sprawdź też</div>
+        <h2 class="section-title" id="other-heading">Inne usługi</h2>
+        <div class="grid-services">
+          {otherServices.map((s, i) => (
+            <a href={`/uslugi/${s.slug}`} class="service-card" aria-label={`${s.name} — dowiedz się więcej`}>
+              <div class="service-num" aria-hidden="true">0{i + 1}</div>
+              <div class="service-name">{s.name}</div>
+              <p class="service-desc">{s.short_description ?? ''}</p>
+              <span class="service-link" aria-hidden="true">Więcej →</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- CTA + KONTAKT -->
+  <section class="section">
+    <div class="container">
+      <div class="contact-grid">
+        {siteConfig.phone && (
+          <div class="contact-item">
+            <div class="contact-label">Telefon</div>
+            <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="contact-value phone">{siteConfig.phone}</a>
+          </div>
+        )}
+        {siteConfig.email && (
+          <div class="contact-item">
+            <div class="contact-label">E-mail</div>
+            <a href={`mailto:${siteConfig.email}`} class="contact-value">{siteConfig.email}</a>
+          </div>
+        )}
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">{siteConfig.site_name}</div>
+        <div class="footer-nap">
+          {siteConfig.phone && <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`}>{siteConfig.phone}</a>}
+          {siteConfig.city && <span>{siteConfig.city}</span>}
+        </div>
+        <div class="footer-meta">{siteConfig.template_family ?? 'universal'} · v{siteConfig.template_version ?? '1'}</div>
+      </div>
+    </div>
+  </footer>
 </BaseLayout>

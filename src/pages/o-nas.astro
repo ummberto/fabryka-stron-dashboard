@@ -1,26 +1,564 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
-import { getClientPage } from '../lib/client-data';
+// o-nas.astro — Strona O nas (VoltsFlow template)
+
+import VoltsFlowLayout from '../layouts/VoltsFlowLayout.astro';
+import {
+  getAssetsByClientId,
+  getClientById,
+  getClientPage,
+  getClientSiteConfig,
+  getDesignProfileByClientId,
+  getPublicAssetUrl,
+} from '../lib/client-data';
+import { buildWebPageSchema, buildBreadcrumbSchema, toSchemaScriptTag } from '../lib/schema';
+import { getFallbackImages, getGalleryFallback } from '../lib/fallback-images';
 
 const clientId = import.meta.env.TEST_CLIENT_ID;
+if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
-if (!clientId) {
-  throw new Error('Brak TEST_CLIENT_ID w env');
-}
+const [siteConfig, client, aboutPage, profile, assets] = await Promise.all([
+  getClientSiteConfig(clientId),
+  getClientById(clientId),
+  getClientPage(clientId, 'about'),
+  getDesignProfileByClientId(clientId),
+  getAssetsByClientId(clientId),
+]);
 
-const aboutPage = await getClientPage(clientId, 'about');
+const logoAsset   = assets.find((a) => a.type === 'logo') ?? null;
+const teamAsset   = assets.find((a) => a.type === 'team') ?? null;
+const heroAsset   = assets.find((a) => a.type === 'hero') ?? null;
+const galleryAssets = assets.filter((a) => a.type === 'gallery');
+
+const logoUrl = logoAsset ? getPublicAssetUrl(logoAsset.storage_path) : null;
+const teamUrl = teamAsset ? getPublicAssetUrl(teamAsset.storage_path) : null;
+
+const fb = getFallbackImages(profile?.template_family, client?.industry ?? null);
+
+const teamImg = teamUrl ?? fb.team;
+const aboutImg = fb.about;
+
+const meta        = (aboutPage as any)?.metadata ?? {};
+const bodyText    = aboutPage?.body_markdown ?? '';
+const paragraphs  = bodyText.split('\n').filter(Boolean);
+const metaTitle   = meta.meta_title ?? aboutPage?.meta_title ?? `O nas | ${siteConfig.site_name}`;
+const metaDesc    = meta.meta_description ?? aboutPage?.meta_description ?? `Poznaj ${siteConfig.site_name} — ${siteConfig.city}.`;
+const h1Text      = meta.h1 ?? aboutPage?.title ?? 'O nas';
+const credentials = meta.credentials ?? [];
+
+const domain = siteConfig.domain ? `https://${siteConfig.domain.replace(/^https?:\/\//, '')}` : '';
+const schemaScripts = [
+  toSchemaScriptTag(buildWebPageSchema({ url: `${domain}/o-nas`, title: metaTitle, description: metaDesc, imageUrl: teamImg })),
+  toSchemaScriptTag(buildBreadcrumbSchema({ items: [{ name: 'Start', url: domain || '/' }, { name: 'O nas', url: `${domain}/o-nas` }] })),
+];
+
+const galleryImgs = galleryAssets.length
+  ? galleryAssets.slice(0, 6).map((a) => getPublicAssetUrl(a.storage_path))
+  : Array.from({ length: 4 }, (_, i) => getGalleryFallback(fb, i));
 ---
 
-<BaseLayout
-  title={aboutPage.meta_title ?? 'O nas'}
-  description={aboutPage.meta_description ?? 'O nas'}
+<VoltsFlowLayout
+  title={metaTitle}
+  description={metaDesc}
+  canonicalUrl={domain ? `${domain}/o-nas` : undefined}
+  schemaScripts={schemaScripts}
+  siteConfig={siteConfig}
+  logoUrl={logoUrl}
 >
-  <main class="container" style="padding: 56px 20px;">
-    <h1>{aboutPage.title ?? 'O nas'}</h1>
-    <p>{aboutPage.body_markdown}</p>
+  <slot name="footer-services" slot="footer-services" />
+  <slot name="footer-locations" slot="footer-locations" />
 
-    <p style="margin-top: 24px;">
-      <a href="/">← Wróć na stronę główną</a>
-    </p>
-  </main>
-</BaseLayout>
+  <!-- ── PAGE HERO ─────────────────────────────────────────────────────── -->
+  <section class="vf-page-hero">
+    <div class="vf-page-hero__inner">
+      <div class="vf-page-hero__breadcrumb">
+        <a href="/">Start</a>
+        <span aria-hidden="true">→</span>
+        <span aria-current="page">O nas</span>
+      </div>
+      <h1 class="vf-page-hero__title">{h1Text}</h1>
+      <p class="vf-page-hero__lead">{metaDesc}</p>
+    </div>
+  </section>
+
+  <!-- ── STORY SECTION ─────────────────────────────────────────────────── -->
+  <section class="vf-section vf-story">
+    <div class="vf-container">
+      <div class="vf-story__grid">
+        <div class="vf-story__img-wrap">
+          <img
+            src={teamImg}
+            alt={teamAsset?.alt_text ?? `Zespół ${siteConfig.site_name}`}
+            width="560" height="640"
+            loading="lazy"
+            class="vf-story__img"
+          />
+          <div class="vf-story__badge">
+            <strong>{new Date().getFullYear() - 2010}+</strong>
+            <span>lat<br/>doświadczenia</span>
+          </div>
+        </div>
+
+        <div class="vf-story__content">
+          <div class="vf-eyebrow">Nasza historia</div>
+          <h2 class="vf-h2">Kim jesteśmy</h2>
+          <div class="vf-story__text">
+            {paragraphs.length > 0
+              ? paragraphs.map((p) => <p>{p}</p>)
+              : <>
+                  <p>{siteConfig.site_name} to firma z wieloletnim doświadczeniem{siteConfig.city ? ` w ${siteConfig.city}` : ''}. Specjalizujemy się w wysokiej jakości usługach, dbając o każdy detal i indywidualne podejście do każdego klienta.</p>
+                  <p>Stawiamy na jakość wykonania, terminowość i pełną satysfakcję klienta. Każde zlecenie traktujemy priorytetowo — niezależnie od jego zakresu i złożoności.</p>
+                  <p>Zapraszamy do kontaktu i omówienia Twoich potrzeb.</p>
+                </>
+            }
+          </div>
+
+          {credentials.length > 0 && (
+            <ul class="vf-credentials">
+              {credentials.map((c: string) => (
+                <li>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>
+                  {c}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {siteConfig.phone && (
+            <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="vf-btn vf-btn--primary" style="margin-top:32px;">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+              Zadzwoń — {siteConfig.phone}
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── VALUES ────────────────────────────────────────────────────────── -->
+  <section class="vf-section vf-values" style="background:var(--bg-grey);">
+    <div class="vf-container">
+      <div class="vf-section-header">
+        <div class="vf-eyebrow">Nasze wartości</div>
+        <h2 class="vf-h2">Dlaczego klienci nam ufają</h2>
+      </div>
+      <div class="vf-values__grid">
+        <div class="vf-value-card">
+          <div class="vf-value-card__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3>Jakość wykonania</h3>
+          <p>Każde zlecenie realizujemy z najwyższą starannością, stosując sprawdzone materiały i sprawdzone metody pracy.</p>
+        </div>
+        <div class="vf-value-card">
+          <div class="vf-value-card__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3>Terminowość</h3>
+          <p>Dotrzymujemy ustalonych terminów. Wiemy, że czas klienta jest cenny i nie pozwalamy go marnować.</p>
+        </div>
+        <div class="vf-value-card">
+          <div class="vf-value-card__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <h3>Indywidualne podejście</h3>
+          <p>Każdy klient i każde zlecenie są dla nas wyjątkowe. Słuchamy potrzeb i dostosowujemy rozwiązania do Twoich oczekiwań.</p>
+        </div>
+        <div class="vf-value-card">
+          <div class="vf-value-card__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+          </div>
+          <h3>Gwarancja i serwis</h3>
+          <p>Na wszystkie nasze usługi udzielamy gwarancji. Zapewniamy też szybki serwis pogwarancyjny i wsparcie po realizacji.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STATS ─────────────────────────────────────────────────────────── -->
+  <section class="vf-section vf-about-stats" style="background:var(--heading);color:#fff;">
+    <div class="vf-container">
+      <div class="vf-stats-row">
+        <div class="vf-stat-item">
+          <span class="vf-stat-num" data-target="500">0</span>
+          <span class="vf-stat-plus">+</span>
+          <p>Zadowolonych klientów</p>
+        </div>
+        <div class="vf-stat-item">
+          <span class="vf-stat-num" data-target={new Date().getFullYear() - 2010}>0</span>
+          <span class="vf-stat-plus">+</span>
+          <p>Lat doświadczenia</p>
+        </div>
+        <div class="vf-stat-item">
+          <span class="vf-stat-num" data-target="98">0</span>
+          <span class="vf-stat-plus">%</span>
+          <p>Klientów poleca nas dalej</p>
+        </div>
+        <div class="vf-stat-item">
+          <span class="vf-stat-num" data-target="24">0</span>
+          <span class="vf-stat-plus">h</span>
+          <p>Czas reakcji na zgłoszenie</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── GALLERY ───────────────────────────────────────────────────────── -->
+  <section class="vf-section vf-gallery-section">
+    <div class="vf-container">
+      <div class="vf-section-header">
+        <div class="vf-eyebrow">Realizacje</div>
+        <h2 class="vf-h2">Nasze prace</h2>
+      </div>
+      <div class="vf-gallery-grid">
+        {galleryImgs.map((src, i) => (
+          <div class="vf-gallery-item" style={i === 0 ? 'grid-column:span 2;grid-row:span 2;' : ''}>
+            <img src={src} alt={`Realizacja ${i + 1} — ${siteConfig.site_name}`} width="600" height={i === 0 ? 500 : 280} loading="lazy" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA BAND ──────────────────────────────────────────────────────── -->
+  <section class="vf-cta-band">
+    <div class="vf-container">
+      <div class="vf-cta-band__inner">
+        <div class="vf-cta-band__text">
+          <h2>Gotowy na współpracę?</h2>
+          <p>Skontaktuj się z nami — odpowiemy w ciągu 24 godzin i wycenimy usługę bezpłatnie.</p>
+        </div>
+        <div class="vf-cta-band__actions">
+          {siteConfig.phone && (
+            <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="vf-btn vf-btn--white">
+              Zadzwoń teraz
+            </a>
+          )}
+          <a href="/kontakt" class="vf-btn vf-btn--outline-white">Napisz do nas</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</VoltsFlowLayout>
+
+<style>
+/* ── Page Hero ──────────────────────────────────────────────────────────── */
+.vf-page-hero {
+  background: var(--heading);
+  padding: clamp(60px, 10vw, 120px) 0 clamp(48px, 8vw, 80px);
+}
+.vf-page-hero__inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 48px);
+}
+.vf-page-hero__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  margin-bottom: 24px;
+}
+.vf-page-hero__breadcrumb a {
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  transition: color .2s;
+}
+.vf-page-hero__breadcrumb a:hover { color: var(--accent); }
+.vf-page-hero__title {
+  font-family: var(--font-h);
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin: 0 0 20px;
+}
+.vf-page-hero__lead {
+  font-size: clamp(15px, 1.8vw, 18px);
+  color: rgba(255,255,255,0.65);
+  max-width: 600px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ── Story ──────────────────────────────────────────────────────────────── */
+.vf-story__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(40px, 6vw, 80px);
+  align-items: start;
+}
+.vf-story__img-wrap {
+  position: relative;
+}
+.vf-story__img {
+  width: 100%;
+  aspect-ratio: 4/5;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+.vf-story__badge {
+  position: absolute;
+  bottom: -20px;
+  right: -20px;
+  background: var(--accent);
+  color: #fff;
+  padding: 20px 24px;
+  border-radius: var(--radius);
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(255,98,41,.35);
+}
+.vf-story__badge strong {
+  display: block;
+  font-family: var(--font-h);
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+}
+.vf-story__badge span {
+  font-size: 12px;
+  opacity: .85;
+  line-height: 1.4;
+}
+.vf-story__content { padding-top: 16px; }
+.vf-story__text {
+  color: var(--body);
+  font-size: clamp(14px, 1.6vw, 16px);
+  line-height: 1.85;
+  margin: 20px 0;
+}
+.vf-story__text p + p { margin-top: 16px; }
+
+.vf-credentials {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vf-credentials li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--body);
+}
+.vf-credentials svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: var(--accent);
+}
+
+/* ── Values ─────────────────────────────────────────────────────────────── */
+.vf-values__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  margin-top: 48px;
+}
+.vf-value-card {
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  border: 1px solid #e5eaf0;
+}
+.vf-value-card__icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,98,41,.1);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.vf-value-card__icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vf-value-card h3 {
+  font-family: var(--font-h);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--heading);
+  margin: 0 0 10px;
+}
+.vf-value-card p {
+  font-size: 14px;
+  color: var(--body);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ── Stats ──────────────────────────────────────────────────────────────── */
+.vf-about-stats { padding: clamp(48px, 7vw, 80px) 0; }
+.vf-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  text-align: center;
+}
+.vf-stat-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.vf-stat-num {
+  font-family: var(--font-h);
+  font-size: clamp(40px, 6vw, 72px);
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+.vf-stat-plus {
+  font-family: var(--font-h);
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 800;
+  color: var(--accent);
+  margin-left: -4px;
+}
+.vf-stat-item p {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ── Gallery ────────────────────────────────────────────────────────────── */
+.vf-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 200px;
+  gap: 12px;
+  margin-top: 48px;
+}
+.vf-gallery-item {
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+.vf-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .5s ease;
+}
+.vf-gallery-item:hover img { transform: scale(1.05); }
+
+/* ── CTA Band ───────────────────────────────────────────────────────────── */
+.vf-cta-band {
+  background: var(--accent);
+  padding: clamp(48px, 7vw, 80px) 0;
+}
+.vf-cta-band__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.vf-cta-band__text h2 {
+  font-family: var(--font-h);
+  font-size: clamp(24px, 3.5vw, 36px);
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 8px;
+}
+.vf-cta-band__text p {
+  color: rgba(255,255,255,0.8);
+  font-size: 15px;
+  margin: 0;
+  line-height: 1.6;
+}
+.vf-cta-band__actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.vf-btn--white {
+  background: #fff;
+  color: var(--accent);
+  border: 2px solid #fff;
+}
+.vf-btn--white:hover { background: rgba(255,255,255,.9); }
+.vf-btn--outline-white {
+  background: transparent;
+  color: #fff;
+  border: 2px solid rgba(255,255,255,.5);
+}
+.vf-btn--outline-white:hover { border-color: #fff; background: rgba(255,255,255,.1); }
+
+/* ── Shared helpers ─────────────────────────────────────────────────────── */
+.vf-section { padding: clamp(60px, 8vw, 100px) 0; }
+.vf-container { max-width: 1240px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 48px); }
+.vf-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.vf-h2 {
+  font-family: var(--font-h);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 800;
+  color: var(--heading);
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+.vf-section-header { margin-bottom: 8px; }
+.vf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-radius: var(--radius);
+  font-family: var(--font-h);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  transition: all .2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.vf-btn svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
+.vf-btn--primary { background: var(--accent); color: #fff; }
+.vf-btn--primary:hover { background: #e8541f; }
+
+@media (max-width: 900px) {
+  .vf-story__grid { grid-template-columns: 1fr; }
+  .vf-story__badge { right: 16px; }
+  .vf-stats-row { grid-template-columns: repeat(2, 1fr); }
+  .vf-gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .vf-gallery-item:first-child { grid-column: span 2; }
+  .vf-cta-band__inner { flex-direction: column; text-align: center; }
+  .vf-cta-band__actions { justify-content: center; }
+}
+@media (max-width: 600px) {
+  .vf-stats-row { grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .vf-gallery-grid { grid-template-columns: 1fr; }
+  .vf-gallery-item:first-child { grid-column: span 1; }
+}
+</style>
+
+<script>
+// Counter animation
+const counters = document.querySelectorAll('.vf-stat-num[data-target]');
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    const el = entry.target as HTMLElement;
+    const target = parseInt(el.dataset.target ?? '0', 10);
+    const duration = 1800;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(ease * target).toString();
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    obs.unobserve(el);
+  });
+}, { threshold: 0.3 });
+counters.forEach((c) => obs.observe(c));
+</script>
