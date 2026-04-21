@@ -87,11 +87,11 @@ export const POST: APIRoute = async ({ request }) => {
 
       if (pageSlug === 'about') {
         const r = await generateAboutContent(baseInput);
-        content = { title: r.title, body: r.body, meta_title: r.meta_title, meta_description: r.meta_description };
+        content = { title: r.h1, body: r.body_paragraphs.join('\n\n'), meta_title: r.meta_title, meta_description: r.meta_description };
       } else {
         const r = await generateHomeContent(baseInput);
         content = {
-          title: r.hero_title,
+          title: r.h1,
           body: `${r.hero_subtitle}\n\n${r.about_short}`,
           meta_title: r.meta_title,
           meta_description: r.meta_description,
@@ -138,7 +138,7 @@ export const POST: APIRoute = async ({ request }) => {
           page_id: homePage.id,
           body_markdown: `${result.home.hero_subtitle}\n\n${result.home.about_short}`,
           metadata: {
-            title: result.home.hero_title,
+            title: result.home.h1,
             meta_title: result.home.meta_title,
             meta_description: result.home.meta_description,
             generated_by: 'openrouter',
@@ -149,12 +149,12 @@ export const POST: APIRoute = async ({ request }) => {
 
       // Zapisz about page
       const aboutPage = pages.find((p) => p.slug === 'about');
-      if (aboutPage && result.about?.body) {
+      if (aboutPage && result.about?.body_paragraphs?.length) {
         const d = await createPageDraftVersion({
           page_id: aboutPage.id,
-          body_markdown: result.about.body,
+          body_markdown: result.about.body_paragraphs.join('\n\n'),
           metadata: {
-            title: result.about.title,
+            title: result.about.h1,
             meta_title: result.about.meta_title,
             meta_description: result.about.meta_description,
             generated_by: 'openrouter',
