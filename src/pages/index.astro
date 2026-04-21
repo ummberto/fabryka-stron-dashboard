@@ -1,105 +1,1266 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
+// index.astro — Strona główna klienta (VoltsFlow template)
+// Template: voltsflow | Reference: voltsflow-template.webflow.io
+// Sekcje: Hero · Intro+Form · About · Services · Process · WhyUs · Stats · PhoneCTA · Pricing · Testimonials · Blog · CTA
+
+import ClientLayout from '../layouts/ClientLayout.astro';
 import {
   getAllClientLocations,
+  getAssetsByClientId,
   getClientPage,
   getClientServices,
   getClientSiteConfig,
+  getDesignProfileByClientId,
+  getPublicAssetUrl,
+  getClientPosts,
 } from '../lib/client-data';
+import { buildHomePageSchemas, buildFAQSchema, toSchemaScriptTag } from '../lib/schema';
+import { getFallbackImages, getServiceFallback } from '../lib/fallback-images';
 
 const clientId = import.meta.env.TEST_CLIENT_ID;
+if (!clientId) throw new Error('Brak TEST_CLIENT_ID w env');
 
-if (!clientId) {
-  throw new Error('Brak TEST_CLIENT_ID w env');
+const [siteConfig, services, locations, homePage, profile, assets, posts] = await Promise.all([
+  getClientSiteConfig(clientId),
+  getClientServices(clientId),
+  getAllClientLocations(clientId),
+  getClientPage(clientId, 'home'),
+  getDesignProfileByClientId(clientId),
+  getAssetsByClientId(clientId),
+  getClientPosts(clientId),
+]);
+
+// Assets
+const logoAsset    = assets.find((a) => a.type === 'logo') ?? null;
+const heroAsset    = assets.find((a) => a.type === 'hero') ?? null;
+const teamAsset    = assets.find((a) => a.type === 'team') ?? null;
+const serviceAssets = assets.filter((a) => a.type === 'service');
+const galleryAssets = assets.filter((a) => a.type === 'gallery');
+
+const logoUrl  = logoAsset  ? getPublicAssetUrl(logoAsset.storage_path)  : null;
+const heroUrl  = heroAsset  ? getPublicAssetUrl(heroAsset.storage_path)  : null;
+const teamUrl  = teamAsset  ? getPublicAssetUrl(teamAsset.storage_path)  : null;
+
+// Fallback stock photos — dobierane per branża klienta
+const fb = getFallbackImages(profile?.template_family, siteConfig?.industry ?? null);
+
+const FALLBACK_HERO    = fb.hero;
+const FALLBACK_TEAM    = fb.team;
+const FALLBACK_PROCESS = fb.process;
+const FALLBACK_WHY     = fb.why;
+
+function svcImg(i: number): string {
+  const pool = [...serviceAssets, ...galleryAssets];
+  if (pool.length) return getPublicAssetUrl(pool[i % pool.length].storage_path);
+  return getServiceFallback(fb, i);
 }
 
-const siteConfig = await getClientSiteConfig(clientId);
-const services = await getClientServices(clientId);
-const locations = await getAllClientLocations(clientId);
-const homePage = await getClientPage(clientId, 'home');
+// SEO
+const pageTitle = homePage?.meta_title ?? `${siteConfig.site_name ?? siteConfig.city} — Profesjonalne usługi`;
+const pageDesc  = homePage?.meta_description ?? `${siteConfig.site_name} — ${siteConfig.city}. ${services.map((s: { name: string }) => s.name).slice(0, 3).join(', ')}.`;
+const domain    = siteConfig.domain ? `https://${siteConfig.domain.replace(/^https?:\/\//, '')}` : '';
+const canonicalUrl = domain ? `${domain}/` : undefined;
 
-const title = homePage.meta_title ?? siteConfig.site_name ?? 'Fabryka Stron';
-const description =
-  homePage.meta_description ?? 'Pierwsza strona zasilana z Supabase';
+const pageMeta   = homePage as any;
+const faqItems: { question: string; answer: string }[] = pageMeta?.metadata?.faq ?? [];
+
+const homeSchemas = buildHomePageSchemas({
+  siteConfig,
+  client: { company_name: siteConfig.site_name ?? '', industry: profile?.template_family ?? 'universal' },
+  services,
+  locations,
+  logoUrl,
+  heroUrl,
+  description: pageDesc,
+});
+if (faqItems.length > 0) homeSchemas.push(buildFAQSchema({ items: faqItems }));
+const schemaScripts = homeSchemas.map(toSchemaScriptTag);
+
+// Pricing tiers (statyczne — mogą być dynamiczne w przyszłości)
+const pricingTiers = [
+  {
+    name: 'Podstawowy',
+    tagline: 'Idealny dla małych zleceń',
+    price_mo: 299,
+    price_yr: 2690,
+    desc: 'Drobne naprawy i konserwacje dla klientów indywidualnych.',
+    features: ['Przegląd instalacji', 'Wymiana gniazdek / włączników', 'Konsultacja telefoniczna', 'Gwarancja 12 miesięcy'],
+  },
+  {
+    name: 'Standardowy',
+    tagline: 'Najpopularniejszy wybór',
+    price_mo: 699,
+    price_yr: 6290,
+    desc: 'Kompleksowe usługi dla domów i małych firm z priorytetową obsługą.',
+    features: ['Wszystko z planu Podstawowego', 'Instalacje od podstaw', 'Priorytetowy czas reakcji', 'Gwarancja 24 miesiące'],
+    featured: true,
+  },
+  {
+    name: 'Premium',
+    tagline: 'Pełen zakres usług',
+    price_mo: 1299,
+    price_yr: 11690,
+    desc: 'Rozwiązania dla deweloperów i dużych obiektów komercyjnych.',
+    features: ['Wszystko z planu Standardowego', 'Dedykowany opiekun projektu', 'Dostępność 24/7', 'Gwarancja 36 miesięcy'],
+  },
+];
+
+// Testimonials
+const testimonials = [
+  { quote: 'Szybka realizacja, profesjonalna ekipa. Polecam z czystym sumieniem — wszystko zgodnie z umową i terminem.', author: 'Anna Kowalska', role: 'Właścicielka apartamentów', rating: 5 },
+  { quote: 'Doskonały kontakt od pierwszego telefonu aż do odbioru prac. Jakość wykonania powyżej oczekiwań.', author: 'Marek Wiśniewski', role: 'Manager biurowca', rating: 5 },
+  { quote: 'Ekipa jest naprawdę zaangażowana. Zostawili po sobie idealny porządek i wszystko działa bezbłędnie.', author: 'Katarzyna Nowak', role: 'Właścicielka domu', rating: 5 },
+  { quote: 'Zaufałem im przy kompleksowym remoncie instalacji — nie zawiodłem się. Ceny zgodne z ofertą, zero niespodzianek.', author: 'Tomasz Grabowski', role: 'Inwestor', rating: 5 },
+  { quote: 'Terminowość i rzetelność na najwyższym poziomie. Będę korzystał przy kolejnych inwestycjach.', author: 'Piotr Zając', role: 'Deweloper', rating: 5 },
+];
 ---
 
-<BaseLayout title={title} description={description}>
-  <header>
-    <div class="container header-inner">
-      <div class="logo">{siteConfig.site_name ?? 'Brak nazwy firmy'}</div>
+<ClientLayout
+  title={pageTitle}
+  description={pageDesc}
+  {canonicalUrl}
+  {schemaScripts}
+  designProfile={profile}
+  {siteConfig}
+  {logoUrl}
+>
+  <!-- footer-services slot -->
+  {services.map((s: { name: string; slug: string }) => (
+    <a slot="footer-services" href={`/uslugi/${s.slug}`}>{s.name}</a>
+  ))}
+  <!-- footer-locations slot -->
+  {locations.map((l: { city: string; slug: string }) => (
+    <a slot="footer-locations" href={`/lokalizacje/${l.slug}`}>{l.city}</a>
+  ))}
 
-      <nav>
-        <a href="/">Home</a>
-        <a href="/o-nas">O nas</a>
-        <a href="/kontakt">Kontakt</a>
-      </nav>
+  <!-- ═══════════════════════════════════════════════════════════
+       HERO
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="vf-hero" aria-labelledby="hero-heading">
+    <div
+      class="vf-hero-bg"
+      style={`background-image: url('${heroUrl ?? FALLBACK_HERO}')`}
+      role="img"
+      aria-label={heroAsset?.alt_text ?? `${siteConfig.site_name} — ${siteConfig.city}`}
+    ></div>
+    <div class="container">
+      <div class="vf-hero-content">
+        <div class="vf-hero-eyebrow">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          {siteConfig.city ?? 'Polska'}
+        </div>
+        <h1 id="hero-heading">
+          {homePage?.title ?? `Profesjonalne usługi w ${siteConfig.city ?? 'Twojej okolicy'}`}
+        </h1>
+        <p>
+          {pageDesc}
+        </p>
+        <div class="vf-hero-btns">
+          {siteConfig.phone && (
+            <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="btn btn-primary" aria-label={`Zadzwoń: ${siteConfig.phone}`}>
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+              Zadzwoń teraz
+            </a>
+          )}
+          <a href="/kontakt" class="btn btn-outline-white">Umów wycenę</a>
+        </div>
+      </div>
     </div>
-  </header>
+  </section>
 
-  <main>
-    <section class="hero">
-      <div class="container">
-        <h1>{homePage.title ?? siteConfig.site_name}</h1>
-        <p>{homePage.meta_description}</p>
+  <!-- ═══════════════════════════════════════════════════════════
+       INTRO — value props + formularz
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section section-grey">
+    <div class="container">
+      <div class="vf-intro-grid">
+        <!-- Value props -->
+        <div class="vf-intro-points">
+          <div class="vf-intro-point">
+            <div class="vf-intro-icon" aria-hidden="true">
+              <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div>
+              <div class="vf-intro-title">Przystępne ceny</div>
+              <p class="vf-intro-text">Usługi wysokiej jakości dopasowane do Twojego budżetu. Bez ukrytych kosztów.</p>
+            </div>
+          </div>
+          <div class="vf-intro-point">
+            <div class="vf-intro-icon" aria-hidden="true">
+              <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div>
+              <div class="vf-intro-title">Szybka reakcja</div>
+              <p class="vf-intro-text">Sprawna obsługa — odpowiadamy w ciągu godziny i przyjeżdżamy w ustalonym terminie.</p>
+            </div>
+          </div>
+          <div class="vf-intro-point">
+            <div class="vf-intro-icon" aria-hidden="true">
+              <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <div>
+              <div class="vf-intro-title">Gwarancja jakości</div>
+              <p class="vf-intro-text">Każda usługa objęta jest gwarancją. Możesz liczyć na naszą odpowiedzialność za wynik.</p>
+            </div>
+          </div>
+        </div>
 
-        {siteConfig.cta_url && (
-          <a class="cta" href={siteConfig.cta_url}>
-            Skontaktuj się
+        <!-- Formularz -->
+        <div class="vf-intro-form">
+          <div class="vf-intro-form-title">Twoje rozwiązanie zaczyna się tutaj!</div>
+          <form class="vf-form" method="POST" action="/api/contact" novalidate>
+            <div class="vf-field">
+              <label class="vf-label" for="contact-name">Imię i nazwisko *</label>
+              <input class="vf-input" id="contact-name" name="name" type="text" placeholder="Twoje imię" required autocomplete="name" />
+            </div>
+            <div class="vf-field">
+              <label class="vf-label" for="contact-phone">Telefon *</label>
+              <input class="vf-input" id="contact-phone" name="phone" type="tel" placeholder="Twój numer telefonu" required autocomplete="tel" />
+            </div>
+            <div class="vf-field">
+              <label class="vf-label" for="contact-service">Rodzaj usługi</label>
+              <select class="vf-select" id="contact-service" name="service">
+                <option value="">Wybierz usługę</option>
+                {services.map((s: { name: string; slug: string }) => (
+                  <option value={s.slug}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <button class="btn btn-primary vf-form-btn" type="submit">
+              Wyślij zapytanie
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ABOUT
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section" aria-labelledby="about-heading">
+    <div class="container">
+      <div class="grid-2">
+        <!-- Zdjęcie -->
+        <div class="vf-about-img-wrap">
+          <img
+            src={teamUrl ?? FALLBACK_TEAM}
+            alt={teamAsset?.alt_text ?? `Zespół ${siteConfig.site_name}`}
+            width="560" height="420"
+            loading="lazy"
+          />
+          <div class="vf-about-rating" aria-label="Ocena klientów">
+            <div class="vf-rating-num">4.9</div>
+            <div class="vf-stars" aria-hidden="true">
+              {[1,2,3,4,5].map(() => (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              ))}
+            </div>
+            <div class="vf-rating-label">Zweryfikowani klienci</div>
+          </div>
+        </div>
+
+        <!-- Treść -->
+        <div>
+          <div class="label">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            O nas
+          </div>
+          <h2 id="about-heading">Solidne i bezpieczne usługi</h2>
+          <div class="divider"></div>
+          <p style="margin-bottom:24px;">
+            Doświadczeni specjaliści działający na terenie {siteConfig.city ?? 'całej Polski'}.
+            Zapewniamy bezpieczne, niezawodne rozwiązania dla domów i firm — z gwarancją i pełną odpowiedzialnością za wykonaną pracę.
+          </p>
+          <div class="vf-about-features">
+            <div class="vf-about-feature">
+              <div class="vf-feature-icon" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div>
+                <div class="vf-feature-title">Bezpieczeństwo przede wszystkim</div>
+                <p class="vf-feature-text">Wszystkie prace wykonujemy zgodnie z normami bezpieczeństwa i obowiązującymi przepisami.</p>
+              </div>
+            </div>
+            <div class="vf-about-feature">
+              <div class="vf-feature-icon" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+              </div>
+              <div>
+                <div class="vf-feature-title">Doświadczenie i fachowość</div>
+                <p class="vf-feature-text">Wieloletnie doświadczenie naszego zespołu to gwarancja sprawnej i profesjonalnej obsługi.</p>
+              </div>
+            </div>
+            <div class="vf-about-feature">
+              <div class="vf-feature-icon" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div>
+                <div class="vf-feature-title">Niezawodna obsługa</div>
+                <p class="vf-feature-text">Dotrzymujemy terminów i słowa danego klientowi. Nasza reputacja jest dla nas priorytetem.</p>
+              </div>
+            </div>
+            <div class="vf-about-feature">
+              <div class="vf-feature-icon" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              </div>
+              <div>
+                <div class="vf-feature-title">Transparentne ceny</div>
+                <p class="vf-feature-text">Wycena bez niespodzianek. Podajemy ostateczną cenę przed rozpoczęciem pracy.</p>
+              </div>
+            </div>
+          </div>
+          <a href="/o-nas" class="btn btn-dark" style="margin-top:8px;">
+            Poznaj nas lepiej
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </a>
-        )}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SERVICES
+  ═══════════════════════════════════════════════════════════ -->
+  {services.length > 0 && (
+    <section class="section section-grey" aria-labelledby="services-heading">
+      <div class="container">
+        <div class="vf-services-layout">
+          <!-- Zdjęcie usług -->
+          <div class="vf-services-img">
+            <img src={svcImg(0)} alt="Nasze usługi" width="480" height="640" loading="lazy" />
+          </div>
+
+          <!-- Karty usług -->
+          <div>
+            <div class="label">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Co oferujemy
+            </div>
+            <h2 id="services-heading" style="margin-bottom:8px;">Nasze usługi</h2>
+            <div class="divider"></div>
+            <p style="margin-bottom:32px;max-width:52ch;">
+              Oferujemy kompleksowy zakres usług dla klientów indywidualnych i biznesowych na terenie {siteConfig.city ?? 'całej Polski'}.
+            </p>
+            <div class="vf-services-grid">
+              {services.map((s: { name: string; slug: string; short_description?: string }, i: number) => (
+                <a href={`/uslugi/${s.slug}`} class="vf-service-card" aria-label={`${s.name} — dowiedz się więcej`}>
+                  <div class="vf-service-icon" aria-hidden="true">
+                    <svg width="26" height="26" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  </div>
+                  <div class="vf-service-name">{s.name}</div>
+                  {s.short_description && <p class="vf-service-desc">{s.short_description}</p>}
+                  <span class="vf-service-link" aria-hidden="true">
+                    Więcej
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
+  )}
 
-    <section class="section">
+  <!-- ═══════════════════════════════════════════════════════════
+       PROCESS
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section" aria-labelledby="process-heading">
+    <div class="container">
+      <div class="grid-2">
+        <!-- Zdjęcie -->
+        <div class="vf-process-img">
+          <img src={svcImg(1) ?? FALLBACK_PROCESS} alt="Nasz proces pracy" width="520" height="480" loading="lazy" />
+        </div>
+
+        <!-- Kroki -->
+        <div>
+          <div class="label">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Jak pracujemy
+          </div>
+          <h2 id="process-heading">Nasz proces</h2>
+          <div class="divider"></div>
+          <div class="vf-steps">
+            <div class="vf-step">
+              <div class="vf-step-num" aria-hidden="true">1</div>
+              <div>
+                <div class="vf-step-title">Konsultacja</div>
+                <p class="vf-step-text">Omawiamy Twoje potrzeby i wymagania. Doradzamy najlepsze rozwiązania dopasowane do Twojej sytuacji.</p>
+              </div>
+            </div>
+            <div class="vf-step">
+              <div class="vf-step-num" aria-hidden="true">2</div>
+              <div>
+                <div class="vf-step-title">Planowanie i wycena</div>
+                <p class="vf-step-text">Przygotowujemy szczegółowy plan i transparentną wycenę bez ukrytych kosztów. Ustalamy termin realizacji.</p>
+              </div>
+            </div>
+            <div class="vf-step">
+              <div class="vf-step-num" aria-hidden="true">3</div>
+              <div>
+                <div class="vf-step-title">Realizacja</div>
+                <p class="vf-step-text">Profesjonalne wykonanie prac przez doświadczonych specjalistów z użyciem sprawdzonych materiałów.</p>
+              </div>
+            </div>
+            <div class="vf-step">
+              <div class="vf-step-num" aria-hidden="true">4</div>
+              <div>
+                <div class="vf-step-title">Odbiór i gwarancja</div>
+                <p class="vf-step-text">Wspólny odbiór prac i przekazanie gwarancji. Zostajemy do Twojej dyspozycji po zakończeniu zlecenia.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       WHY CHOOSE US
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section section-lite" aria-labelledby="why-heading">
+    <div class="container">
+      <div class="vf-why-grid">
+        <!-- Karty -->
+        <div>
+          <div class="label">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Dlaczego my
+          </div>
+          <h2 id="why-heading" style="margin-bottom:8px;">Co nas wyróżnia</h2>
+          <div class="divider"></div>
+          <div class="vf-why-cards">
+            <div class="vf-why-card">
+              <div class="vf-why-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+              </div>
+              <div class="vf-why-title">Doświadczenie</div>
+              <p class="vf-why-text">Wieloletnia praktyka w branży gwarantuje sprawną i fachową realizację każdego zlecenia.</p>
+            </div>
+            <div class="vf-why-card">
+              <div class="vf-why-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div class="vf-why-title">Niezawodność</div>
+              <p class="vf-why-text">Dotrzymujemy terminów i umów. Możesz liczyć na nas zawsze wtedy, kiedy jesteśmy potrzebni.</p>
+            </div>
+            <div class="vf-why-card">
+              <div class="vf-why-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div class="vf-why-title">Bezpieczeństwo</div>
+              <p class="vf-why-text">Wszystkie nasze działania są zgodne z przepisami BHP i normami branżowymi.</p>
+            </div>
+            <div class="vf-why-card">
+              <div class="vf-why-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              </div>
+              <div class="vf-why-title">Uczciwe ceny</div>
+              <p class="vf-why-text">Transparentne wyceny bez niespodzianek. Znasz cenę końcową zanim zaczniemy pracę.</p>
+            </div>
+          </div>
+          <p style="margin-top:28px;font-size:14px;">
+            <a href="/kontakt" style="color:var(--accent);font-weight:700;">Skontaktuj się z nami po bezpłatną wycenę →</a>
+          </p>
+        </div>
+
+        <!-- Zdjęcie -->
+        <div class="vf-why-img">
+          <img src={svcImg(2) ?? FALLBACK_WHY} alt="Dlaczego wybrać naszą firmę" width="500" height="600" loading="lazy" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       STATS — dark section z licznikami
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="vf-stats section-dark section" aria-label="Osiągnięcia firmy">
+    <div class="container">
+      <div class="vf-stats-grid">
+        <div class="vf-stat">
+          <div class="vf-stat-value" data-counter="1250" data-suffix="+">0</div>
+          <div class="vf-stat-label">Zadowolonych klientów</div>
+        </div>
+        <div class="vf-stat">
+          <div class="vf-stat-value" data-counter="15" data-suffix="">0</div>
+          <div class="vf-stat-label">Lat doświadczenia</div>
+        </div>
+        <div class="vf-stat">
+          <div class="vf-stat-value" data-counter="3200" data-suffix="+">0</div>
+          <div class="vf-stat-label">Zrealizowanych projektów</div>
+        </div>
+        <div class="vf-stat">
+          <div class="vf-stat-value" data-counter={services.length} data-suffix="">0</div>
+          <div class="vf-stat-label">Rodzajów usług</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       PHONE CTA
+  ═══════════════════════════════════════════════════════════ -->
+  {siteConfig.phone && (
+    <div class="vf-phone-cta" role="complementary" aria-label="Kontakt telefoniczny">
       <div class="container">
-        <h2>Nasze usługi</h2>
+        <div class="vf-phone-cta-inner">
+          <div class="vf-phone-icon" aria-hidden="true">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+          </div>
+          <div>
+            <div class="vf-phone-label">Zadzwoń do nas</div>
+            <a
+              href={`tel:${siteConfig.phone.replace(/\s/g,'')}`}
+              class="vf-phone-number"
+              aria-label={`Zadzwoń: ${siteConfig.phone}`}
+            >
+              {siteConfig.phone}
+            </a>
+          </div>
+          <a href="/kontakt" class="btn btn-dark" style="margin-left:auto;">
+            Wyślij wiadomość
+          </a>
+        </div>
+      </div>
+    </div>
+  )}
 
-        <div class="grid">
-          {services.map((service) => (
-            <article class="card">
-              <h3>{service.name}</h3>
-              <p class="muted">{service.short_description}</p>
-              <a href={`/uslugi/${service.slug}`}>Zobacz więcej</a>
-            </article>
+  <!-- ═══════════════════════════════════════════════════════════
+       PRICING
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section section-grey" aria-labelledby="pricing-heading">
+    <div class="container">
+      <div style="text-align:center;margin-bottom:clamp(32px,4vw,48px);">
+        <div class="label" style="justify-content:center;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Cennik
+        </div>
+        <h2 id="pricing-heading">Wybierz odpowiedni plan</h2>
+        <div class="divider" style="margin:14px auto 0;"></div>
+      </div>
+
+      <!-- Toggle monthly/roczny -->
+      <div class="vf-pricing-toggle" role="group" aria-label="Wybór okresu rozliczeniowego">
+        <span class="vf-toggle-label" id="label-monthly">Miesięcznie</span>
+        <button
+          class="vf-toggle-switch"
+          id="pricing-toggle"
+          role="switch"
+          aria-checked="false"
+          aria-labelledby="label-monthly label-yearly"
+        ></button>
+        <span class="vf-toggle-label" id="label-yearly">
+          Rocznie
+          <span class="vf-badge">Oszczędź 25%</span>
+        </span>
+      </div>
+
+      <div class="grid-3 vf-pricing-grid">
+        {pricingTiers.map((tier) => (
+          <div class={`vf-pricing-card${tier.featured ? ' vf-pricing-featured' : ''}`}>
+            {tier.featured && <div class="vf-pricing-badge">Najpopularniejszy</div>}
+            <div class="vf-pricing-name">{tier.name}</div>
+            <div class="vf-pricing-tagline">{tier.tagline}</div>
+            <div class="vf-pricing-price monthly">
+              {tier.price_mo.toLocaleString('pl-PL')} <span>zł / mies.</span>
+            </div>
+            <div class="vf-pricing-price yearly" style="display:none;">
+              {tier.price_yr.toLocaleString('pl-PL')} <span>zł / rok</span>
+            </div>
+            <p class="vf-pricing-desc">{tier.desc}</p>
+            <ul class="vf-pricing-features">
+              {tier.features.map((f) => (
+                <li class="vf-pricing-feature">
+                  <svg width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href="/kontakt" class={tier.featured ? 'btn btn-primary' : 'btn btn-outline'} style="width:100%;justify-content:center;">
+              Wybierz plan
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       TESTIMONIALS
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section" aria-labelledby="testimonials-heading">
+    <div class="container">
+      <div style="text-align:center;margin-bottom:clamp(32px,4vw,48px);">
+        <div class="label" style="justify-content:center;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Opinie klientów
+        </div>
+        <h2 id="testimonials-heading">Co mówią nasi klienci</h2>
+        <div class="divider" style="margin:14px auto 0;"></div>
+      </div>
+
+      <div class="vf-slider-wrap" aria-label="Opinie klientów">
+        <div class="vf-slider" id="testimonials-slider">
+          <div class="vf-slider-track" id="testimonials-track" role="list">
+            {testimonials.map((t, i) => (
+              <div class="vf-testimonial" role="listitem" aria-label={`Opinia ${i+1} z ${testimonials.length}`}>
+                <div class="vf-t-stars" aria-label={`Ocena: ${t.rating} na 5`}>
+                  {[1,2,3,4,5].map(() => (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  ))}
+                </div>
+                <p class="vf-t-quote">"{t.quote}"</p>
+                <div class="vf-t-author">
+                  <div class="vf-t-avatar" aria-hidden="true">{t.author.charAt(0)}</div>
+                  <div>
+                    <div class="vf-t-name">{t.author}</div>
+                    <div class="vf-t-role">{t.role}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div class="vf-slider-dots" role="tablist" aria-label="Nawigacja opinii" id="testimonials-dots">
+          {testimonials.map((_, i) => (
+            <button
+              class={`vf-dot${i === 0 ? ' active' : ''}`}
+              role="tab"
+              aria-selected={i === 0 ? 'true' : 'false'}
+              aria-label={`Opinia ${i+1}`}
+              data-index={i}
+            ></button>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BLOG (jeśli są wpisy)
+  ═══════════════════════════════════════════════════════════ -->
+  {posts.length > 0 && (
+    <section class="section section-grey" aria-labelledby="blog-heading">
+      <div class="container">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:clamp(28px,4vw,44px);flex-wrap:wrap;">
+          <div>
+            <div class="label">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Baza wiedzy
+            </div>
+            <h2 id="blog-heading" style="margin:0;">Nasze artykuły</h2>
+          </div>
+          <a href="/blog" class="btn btn-outline">Wszystkie artykuły</a>
+        </div>
+        <div class="grid-3">
+          {posts.slice(0, 3).map((post: { title: string; slug: string; status?: string; created_at?: string }, i: number) => (
+            <a href={`/blog/${post.slug}`} class="vf-blog-card" aria-label={post.title}>
+              <div class="vf-blog-img-wrap">
+                <img
+                  src={fb.services[i % fb.services.length]}
+                  alt={post.title}
+                  width="600" height="338"
+                  loading="lazy"
+                  style="width:100%;aspect-ratio:16/9;object-fit:cover;"
+                />
+              </div>
+              <div class="vf-blog-body">
+                <span class="vf-blog-badge">Poradnik</span>
+                {post.created_at && (
+                  <div class="vf-blog-date">
+                    {new Date(post.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                )}
+                <div class="vf-blog-title">{post.title}</div>
+              </div>
+            </a>
           ))}
         </div>
       </div>
     </section>
-<section class="section">
-  <div class="container">
-    <h2>Obsługiwane lokalizacje</h2>
+  )}
 
-    <div class="grid">
-      {locations.map((location) => (
-        <article class="card">
-          <h3>{location.city}</h3>
-          <p class="muted">
-            {location.region ?? 'Lokalizacja aktywna w systemie'}
-          </p>
-          <a href={`/lokalizacje/${location.slug}`}>Zobacz lokalizację</a>
-        </article>
-      ))}
-    </div>
-  </div>
-</section>
-    <section class="section">
-      <div class="container">
-        <h2>Dane kontaktowe</h2>
-        <p><strong>Telefon:</strong> {siteConfig.phone ?? '-'}</p>
-        <p><strong>E-mail:</strong> {siteConfig.email ?? '-'}</p>
-        <p><strong>Adres:</strong> {siteConfig.address ?? '-'}</p>
-        <p><strong>Miasto:</strong> {siteConfig.city ?? '-'}</p>
+  <!-- ═══════════════════════════════════════════════════════════
+       FAQ
+  ═══════════════════════════════════════════════════════════ -->
+  {faqItems.length > 0 && (
+    <section class="section" aria-labelledby="faq-heading">
+      <div class="container" style="max-width:800px;">
+        <div style="text-align:center;margin-bottom:clamp(28px,4vw,44px);">
+          <div class="label" style="justify-content:center;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            FAQ
+          </div>
+          <h2 id="faq-heading">Najczęstsze pytania</h2>
+        </div>
+        <div class="vf-faq-list" role="list">
+          {faqItems.map((item, i) => (
+            <div class="vf-faq-item" role="listitem">
+              <button
+                class="vf-faq-q"
+                aria-expanded="false"
+                aria-controls={`faq-a-${i}`}
+                id={`faq-q-${i}`}
+              >
+                {item.question}
+                <svg class="vf-faq-chevron" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="vf-faq-a" id={`faq-a-${i}`} role="region" aria-labelledby={`faq-q-${i}`}>
+                <div class="vf-faq-a-inner">{item.answer}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
-  </main>
+  )}
 
-  <footer>
-    <div class="container">
-      <div>{siteConfig.site_name}</div>
-      <div class="muted">
-        Template family: {siteConfig.template_family ?? '-'} / version:{' '}
-        {siteConfig.template_version ?? '-'}
+  <!-- ═══════════════════════════════════════════════════════════
+       LOKALIZACJE
+  ═══════════════════════════════════════════════════════════ -->
+  {locations.length > 0 && (
+    <section class="section section-lite" aria-labelledby="locations-heading">
+      <div class="container">
+        <div style="text-align:center;margin-bottom:clamp(24px,3vw,36px);">
+          <div class="label" style="justify-content:center;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Zasięg
+          </div>
+          <h2 id="locations-heading">Obsługiwane lokalizacje</h2>
+        </div>
+        <div class="vf-location-tags" role="list">
+          {locations.map((loc: { city: string; slug: string }) => (
+            <a href={`/lokalizacje/${loc.slug}`} class="vf-location-tag" role="listitem">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              {loc.city}
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- ═══════════════════════════════════════════════════════════
+       FINAL CTA
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="section" aria-labelledby="cta-heading">
+    <div class="container" style="text-align:center;max-width:700px;">
+      <div class="vf-cta-icon" aria-hidden="true">
+        <svg width="28" height="28" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      {siteConfig.email && (
+        <div class="vf-cta-email">{siteConfig.email}</div>
+      )}
+      <h2 id="cta-heading">Skontaktuj się z nami</h2>
+      <div class="divider" style="margin:16px auto 20px;"></div>
+      <p style="margin:0 auto 32px;">
+        Gotowy na profesjonalną obsługę? Zadzwoń lub napisz — odpowiemy szybko i bezpłatnie wycenimy Twoje zlecenie.
+      </p>
+      <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;">
+        <a href="/kontakt" class="btn btn-primary">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Bezpłatna wycena
+        </a>
+        {siteConfig.phone && (
+          <a href={`tel:${siteConfig.phone.replace(/\s/g,'')}`} class="btn btn-outline">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+            {siteConfig.phone}
+          </a>
+        )}
       </div>
     </div>
-  </footer>
-</BaseLayout>
+  </section>
+</ClientLayout>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE-LEVEL STYLES
+═══════════════════════════════════════════════════════════ -->
+<style>
+  /* ── HERO ─────────────────────────────────────────────────── */
+  .vf-hero {
+    position: relative;
+    min-height: clamp(480px, 70vh, 760px);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+  .vf-hero-bg {
+    position: absolute; inset: 0;
+    background-size: cover;
+    background-position: center;
+  }
+  .vf-hero-bg::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(100deg, rgba(16,20,24,0.78) 0%, rgba(16,20,24,0.3) 100%);
+  }
+  .vf-hero-content {
+    position: relative; z-index: 1;
+    padding: 80px 0;
+  }
+  .vf-hero h1 {
+    color: #fff;
+    font-size: clamp(34px, 5.5vw, 62px);
+    font-weight: 900;
+    line-height: 1.07;
+    margin-bottom: 20px;
+    max-width: 16ch;
+  }
+  .vf-hero p {
+    color: rgba(255,255,255,0.8);
+    font-size: clamp(15px, 1.6vw, 18px);
+    line-height: 1.65;
+    margin-bottom: 34px;
+    max-width: 54ch;
+  }
+  .vf-hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-h);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+  .vf-hero-eyebrow svg { width: 14px; height: 14px; }
+  .vf-hero-btns { display: flex; gap: 14px; flex-wrap: wrap; }
+
+  /* ── INTRO ────────────────────────────────────────────────── */
+  .vf-intro-grid {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: clamp(24px, 5vw, 64px);
+    align-items: start;
+  }
+  .vf-intro-points { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
+  .vf-intro-point {
+    display: flex;
+    gap: 18px;
+    padding: clamp(18px, 2.5vw, 26px);
+    border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+  }
+  .vf-intro-point:last-child { border-bottom: none; }
+  .vf-intro-icon {
+    width: 48px; height: 48px; flex-shrink: 0;
+    background: var(--accent);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-intro-title { font-family: var(--font-h); font-size: 16px; font-weight: 700; color: var(--heading); margin-bottom: 4px; }
+  .vf-intro-text { font-size: 14px; color: var(--body); line-height: 1.6; max-width: 48ch; }
+  .vf-intro-form {
+    background: var(--heading);
+    border-radius: var(--radius-lg);
+    padding: clamp(24px, 3vw, 36px);
+    box-shadow: var(--shadow-lg);
+  }
+  .vf-intro-form-title {
+    font-family: var(--font-h);
+    font-size: clamp(18px, 2.5vw, 24px);
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 22px;
+    line-height: 1.2;
+  }
+  .vf-form { display: flex; flex-direction: column; gap: 0; }
+  .vf-field { margin-bottom: 14px; }
+  .vf-label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255,255,255,0.6); margin-bottom: 6px; }
+  .vf-input, .vf-select {
+    width: 100%;
+    padding: 13px 16px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 14px;
+    transition: border-color var(--transition);
+  }
+  .vf-input::placeholder { color: rgba(255,255,255,0.3); }
+  .vf-input:focus, .vf-select:focus { outline: none; border-color: var(--accent); }
+  .vf-select { appearance: none; }
+  .vf-select option { background: var(--heading); }
+  .vf-form-btn { width: 100%; justify-content: center; margin-top: 4px; }
+
+  /* ── ABOUT ────────────────────────────────────────────────── */
+  .vf-about-img-wrap { position: relative; }
+  .vf-about-img-wrap img {
+    width: 100%;
+    aspect-ratio: 4/3;
+    object-fit: cover;
+    border-radius: var(--radius-lg);
+  }
+  .vf-about-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 8px 18px 8px 10px;
+    margin-top: 16px;
+    box-shadow: var(--shadow);
+  }
+  .vf-rating-num { font-family: var(--font-h); font-size: 18px; font-weight: 900; color: var(--heading); }
+  .vf-stars { display: flex; gap: 2px; }
+  .vf-rating-label { font-size: 12px; color: var(--body); }
+  .vf-about-features { display: flex; flex-direction: column; }
+  .vf-about-feature {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .vf-about-feature:first-child { border-top: 1px solid var(--border); }
+  .vf-feature-icon {
+    width: 36px; height: 36px; flex-shrink: 0;
+    background: rgba(255,98,41,0.1);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-feature-title { font-family: var(--font-h); font-size: 14px; font-weight: 700; color: var(--heading); margin-bottom: 2px; }
+  .vf-feature-text { font-size: 13px; color: var(--body); line-height: 1.55; max-width: 44ch; }
+
+  /* ── SERVICES ─────────────────────────────────────────────── */
+  .vf-services-layout { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: clamp(24px, 5vw, 56px); align-items: start; }
+  .vf-services-img { border-radius: var(--radius-lg); overflow: hidden; }
+  .vf-services-img img { width: 100%; aspect-ratio: 3/4; object-fit: cover; }
+  .vf-services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .vf-service-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(18px, 2vw, 24px);
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column;
+    transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
+  }
+  .vf-service-card:hover { box-shadow: var(--shadow); transform: translateY(-3px); border-color: var(--accent); }
+  .vf-service-icon { width: 44px; height: 44px; background: rgba(255,98,41,0.1); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+  .vf-service-name { font-family: var(--font-h); font-size: 15px; font-weight: 700; color: var(--heading); margin-bottom: 8px; line-height: 1.2; }
+  .vf-service-desc { font-size: 13px; color: var(--body); line-height: 1.6; flex: 1; margin-bottom: 14px; max-width: 36ch; }
+  .vf-service-link { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-h); font-size: 12px; font-weight: 700; color: var(--accent); margin-top: auto; transition: gap var(--transition); }
+  .vf-service-card:hover .vf-service-link { gap: 9px; }
+
+  /* ── PROCESS ──────────────────────────────────────────────── */
+  .vf-process-img { border-radius: var(--radius-lg); overflow: hidden; }
+  .vf-process-img img { width: 100%; aspect-ratio: 1.1; object-fit: cover; }
+  .vf-steps { display: flex; flex-direction: column; }
+  .vf-step {
+    display: flex; gap: 18px; align-items: flex-start;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .vf-step:last-child { border-bottom: none; }
+  .vf-step-num {
+    width: 40px; height: 40px; flex-shrink: 0;
+    background: var(--accent);
+    color: var(--heading);
+    font-family: var(--font-h); font-size: 15px; font-weight: 800;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-step-title { font-family: var(--font-h); font-size: 16px; font-weight: 700; color: var(--heading); margin-bottom: 4px; }
+  .vf-step-text { font-size: 13px; color: var(--body); line-height: 1.6; max-width: 48ch; }
+
+  /* ── WHY ──────────────────────────────────────────────────── */
+  .vf-why-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: clamp(24px, 5vw, 64px); align-items: center; }
+  .vf-why-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+  .vf-why-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(16px, 2vw, 22px);
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+  .vf-why-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+  .vf-why-icon { width: 38px; height: 38px; background: rgba(255,98,41,0.1); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .vf-why-title { font-family: var(--font-h); font-size: 14px; font-weight: 700; color: var(--heading); margin-bottom: 6px; }
+  .vf-why-text { font-size: 13px; color: var(--body); line-height: 1.55; }
+  .vf-why-img { border-radius: var(--radius-lg); overflow: hidden; }
+  .vf-why-img img { width: 100%; aspect-ratio: 5/6; object-fit: cover; }
+
+  /* ── STATS ────────────────────────────────────────────────── */
+  .vf-stats { position: relative; background-color: var(--heading); }
+  .vf-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(16px, 3vw, 32px); }
+  .vf-stat { text-align: center; padding: 20px 10px; }
+  .vf-stat-value {
+    font-family: var(--font-h);
+    font-size: clamp(32px, 4.5vw, 52px);
+    font-weight: 900;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .vf-stat-label { font-size: 13px; color: rgba(255,255,255,0.6); font-weight: 500; }
+
+  /* ── PHONE CTA ────────────────────────────────────────────── */
+  .vf-phone-cta { background: var(--bg-lite); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: clamp(18px, 3vw, 28px) 0; }
+  .vf-phone-cta-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .vf-phone-icon { width: 48px; height: 48px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .vf-phone-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--body); margin-bottom: 3px; }
+  .vf-phone-number { font-family: var(--font-h); font-size: clamp(20px, 3vw, 32px); font-weight: 900; color: var(--heading); transition: color var(--transition); }
+  a.vf-phone-number:hover { color: var(--accent); }
+
+  /* ── PRICING ──────────────────────────────────────────────── */
+  .vf-pricing-toggle { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 36px; }
+  .vf-toggle-label { font-family: var(--font-h); font-size: 14px; font-weight: 600; color: var(--body); display: flex; align-items: center; gap: 8px; }
+  .vf-badge { background: rgba(255,98,41,0.12); color: var(--accent); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: var(--radius-full); }
+  .vf-toggle-switch {
+    width: 50px; height: 26px;
+    background: var(--border);
+    border-radius: var(--radius-full);
+    position: relative; cursor: pointer;
+    transition: background var(--transition);
+    border: none;
+  }
+  .vf-toggle-switch.active { background: var(--accent); }
+  .vf-toggle-switch::after {
+    content: '';
+    position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform var(--transition);
+    pointer-events: none;
+  }
+  .vf-toggle-switch.active::after { transform: translateX(24px); }
+  .vf-pricing-card {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: clamp(22px, 3vw, 36px);
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column;
+    position: relative;
+    transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
+  }
+  .vf-pricing-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-4px); }
+  .vf-pricing-featured { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), var(--shadow-lg); }
+  .vf-pricing-badge {
+    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    background: var(--accent);
+    color: var(--heading);
+    font-family: var(--font-h); font-size: 11px; font-weight: 800;
+    padding: 4px 14px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+  }
+  .vf-pricing-name { font-family: var(--font-h); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); margin-bottom: 4px; }
+  .vf-pricing-tagline { font-size: 13px; color: var(--body); margin-bottom: 14px; }
+  .vf-pricing-price { font-family: var(--font-h); font-size: clamp(28px, 3.5vw, 40px); font-weight: 900; color: var(--heading); margin-bottom: 4px; line-height: 1.1; }
+  .vf-pricing-price span { font-size: 14px; font-weight: 500; color: var(--body); }
+  .vf-pricing-desc { font-size: 13px; color: var(--body); margin: 12px 0 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border); line-height: 1.6; }
+  .vf-pricing-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; flex: 1; }
+  .vf-pricing-feature { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--body); }
+
+  /* ── TESTIMONIALS ─────────────────────────────────────────── */
+  .vf-slider-wrap { overflow: hidden; }
+  .vf-slider { overflow: hidden; }
+  .vf-slider-track {
+    display: flex; gap: 24px;
+    transition: transform 0.4s cubic-bezier(0.25,1,0.5,1);
+    will-change: transform;
+  }
+  .vf-testimonial {
+    flex: 0 0 calc(33.33% - 16px);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: clamp(20px, 2.5vw, 28px);
+    box-shadow: var(--shadow);
+  }
+  .vf-t-stars { display: flex; gap: 3px; margin-bottom: 14px; }
+  .vf-t-quote { font-size: 15px; color: var(--body); line-height: 1.65; margin-bottom: 20px; font-style: italic; }
+  .vf-t-author { display: flex; align-items: center; gap: 12px; }
+  .vf-t-avatar {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+    background: var(--accent);
+    color: var(--heading);
+    font-family: var(--font-h); font-size: 18px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-t-name { font-family: var(--font-h); font-size: 15px; font-weight: 700; color: var(--heading); }
+  .vf-t-role { font-size: 12px; color: var(--body); }
+  .vf-slider-dots { display: flex; justify-content: center; gap: 8px; margin-top: 28px; }
+  .vf-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border);
+    cursor: pointer; border: none;
+    transition: background var(--transition), transform var(--transition);
+  }
+  .vf-dot.active { background: var(--accent); transform: scale(1.4); }
+
+  /* ── BLOG ─────────────────────────────────────────────────── */
+  .vf-blog-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow var(--transition), transform var(--transition);
+    display: block;
+  }
+  .vf-blog-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+  .vf-blog-img-wrap { overflow: hidden; }
+  .vf-blog-body { padding: clamp(18px, 2.5vw, 24px); background: var(--bg); }
+  .vf-blog-badge { display: inline-block; padding: 3px 12px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: var(--radius-full); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .vf-blog-date { font-size: 12px; color: var(--body); margin-bottom: 8px; }
+  .vf-blog-title { font-family: var(--font-h); font-size: clamp(15px, 1.8vw, 19px); font-weight: 700; color: var(--heading); line-height: 1.3; transition: color var(--transition); }
+  .vf-blog-card:hover .vf-blog-title { color: var(--accent); }
+
+  /* ── FAQ ──────────────────────────────────────────────────── */
+  .vf-faq-list { display: flex; flex-direction: column; gap: 4px; }
+  .vf-faq-item { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: border-color var(--transition); }
+  .vf-faq-item:hover { border-color: var(--accent); }
+  .vf-faq-q {
+    width: 100%;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    min-height: 56px; padding: 14px clamp(18px, 2.5vw, 24px);
+    background: none; border: none;
+    font-family: var(--font-b); font-size: 15px; font-weight: 600;
+    color: var(--heading); text-align: left;
+    cursor: pointer; transition: color var(--transition);
+  }
+  .vf-faq-q:hover { color: var(--accent); }
+  .vf-faq-chevron { flex-shrink: 0; transition: transform var(--transition); }
+  .vf-faq-item.open .vf-faq-chevron { transform: rotate(180deg); }
+  .vf-faq-a { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--transition); }
+  .vf-faq-item.open .vf-faq-a { grid-template-rows: 1fr; }
+  .vf-faq-a-inner { overflow: hidden; padding: 0 clamp(18px, 2.5vw, 24px) 16px; font-size: 14px; color: var(--body); line-height: 1.7; }
+
+  /* ── LOCATIONS ────────────────────────────────────────────── */
+  .vf-location-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .vf-location-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    min-height: 42px; padding: 0 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--bg);
+    font-size: 14px; font-weight: 500; color: var(--body);
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition), color var(--transition), background var(--transition), transform var(--transition);
+    touch-action: manipulation;
+  }
+  .vf-location-tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(255,98,41,0.05); transform: translateY(-1px); }
+
+  /* ── FINAL CTA ────────────────────────────────────────────── */
+  .vf-cta-icon {
+    width: 64px; height: 64px; margin: 0 auto 16px;
+    background: rgba(255,98,41,0.1);
+    border-radius: var(--radius-lg);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-cta-email { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); margin-bottom: 10px; }
+
+  /* ── IMAGE PLACEHOLDER ────────────────────────────────────── */
+  .vf-img-placeholder {
+    width: 100%;
+    background: linear-gradient(135deg, var(--bg-grey) 0%, var(--bg-lite) 100%);
+    border-radius: var(--radius-lg);
+    aspect-ratio: 4/3;
+  }
+
+  /* ── RESPONSIVE ───────────────────────────────────────────── */
+  @media (max-width: 860px) {
+    .vf-intro-grid { grid-template-columns: 1fr; }
+    .vf-services-layout { grid-template-columns: 1fr; }
+    .vf-services-img { max-height: 300px; overflow: hidden; }
+    .vf-why-grid { grid-template-columns: 1fr; }
+    .vf-stats-grid { grid-template-columns: 1fr 1fr; }
+    .vf-testimonial { flex: 0 0 calc(50% - 12px); }
+    .vf-phone-cta-inner { justify-content: center; }
+  }
+  @media (max-width: 640px) {
+    .vf-stats-grid { grid-template-columns: 1fr 1fr; }
+    .vf-services-grid { grid-template-columns: 1fr; }
+    .vf-why-cards { grid-template-columns: 1fr; }
+    .vf-testimonial { flex: 0 0 100%; }
+  }
+</style>
+
+<script>
+  // ── Counter animation ────────────────────────────────────
+  function animateCounters() {
+    document.querySelectorAll<HTMLElement>('[data-counter]').forEach((el) => {
+      const target = parseInt(el.dataset.counter ?? '0', 10);
+      const suffix = el.dataset.suffix ?? '';
+      const duration = 1800;
+      const start = performance.now();
+      const tick = (now: number) => {
+        const p = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - p, 4);
+        el.textContent = Math.round(target * eased).toLocaleString('pl-PL') + suffix;
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+  const statsEl = document.querySelector('.vf-stats');
+  if (statsEl) {
+    new IntersectionObserver((entries, obs) => {
+      if (entries[0].isIntersecting) { animateCounters(); obs.disconnect(); }
+    }, { threshold: 0.3 }).observe(statsEl);
+  }
+
+  // ── Pricing toggle ───────────────────────────────────────
+  const toggle = document.getElementById('pricing-toggle') as HTMLButtonElement | null;
+  toggle?.addEventListener('click', () => {
+    const isYearly = toggle.classList.toggle('active');
+    toggle.setAttribute('aria-checked', String(isYearly));
+    document.querySelectorAll<HTMLElement>('.monthly').forEach(el => el.style.display = isYearly ? 'none' : '');
+    document.querySelectorAll<HTMLElement>('.yearly').forEach(el => el.style.display = isYearly ? '' : 'none');
+  });
+
+  // ── Testimonials slider ──────────────────────────────────
+  const track = document.getElementById('testimonials-track') as HTMLElement | null;
+  const dots = document.querySelectorAll<HTMLButtonElement>('.vf-dot');
+  let current = 0;
+
+  function slideTo(i: number) {
+    if (!track) return;
+    current = i;
+    const card = track.querySelector<HTMLElement>('.vf-testimonial');
+    if (!card) return;
+    const w = card.offsetWidth + 24;
+    track.style.transform = `translateX(-${i * w}px)`;
+    dots.forEach((d, idx) => {
+      d.classList.toggle('active', idx === i);
+      d.setAttribute('aria-selected', String(idx === i));
+    });
+  }
+  dots.forEach((dot, i) => dot.addEventListener('click', () => slideTo(i)));
+
+  // Auto-advance every 4s
+  let timer = setInterval(() => {
+    const next = (current + 1) % dots.length;
+    slideTo(next);
+  }, 4000);
+  track?.closest('.vf-slider-wrap')?.addEventListener('mouseenter', () => clearInterval(timer));
+  track?.closest('.vf-slider-wrap')?.addEventListener('mouseleave', () => {
+    timer = setInterval(() => slideTo((current + 1) % dots.length), 4000);
+  });
+
+  // ── FAQ accordion ────────────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>('.vf-faq-q').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest<HTMLElement>('.vf-faq-item');
+      if (!item) return;
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.vf-faq-item.open').forEach(el => {
+        el.classList.remove('open');
+        el.querySelector('button')?.setAttribute('aria-expanded', 'false');
+      });
+      if (!isOpen) {
+        item.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+</script>
