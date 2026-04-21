@@ -21,3 +21,36 @@ export const supabaseAdmin = createClient(
     },
   }
 );
+
+export async function uploadClientAsset(params: {
+  bucket?: string;
+  path: string;
+  file: File;
+  contentType?: string;
+}) {
+  const bucket = params.bucket ?? 'client-media';
+
+  const arrayBuffer = await params.file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(bucket)
+    .upload(params.path, fileBuffer, {
+      contentType: params.contentType ?? params.file.type ?? 'application/octet-stream',
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`Błąd uploadu do storage: ${error.message}`);
+  }
+
+  return data;
+}
+
+export function buildClientAssetPath(params: {
+  clientId: string;
+  fileName: string;
+}) {
+  const safeName = params.fileName.replace(/\s+/g, '-').toLowerCase();
+  return `${params.clientId}/${Date.now()}-${safeName}`;
+}
